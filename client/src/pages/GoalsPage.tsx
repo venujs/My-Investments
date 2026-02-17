@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import { INVESTMENT_TYPE_LABELS } from '@/lib/constants';
 import { useQueryClient } from '@tanstack/react-query';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
-import type { Goal } from 'shared';
+import type { Goal, GoalInvestment } from 'shared';
 
 export function GoalsPage() {
   const { data: goals = [] } = useGoals();
@@ -343,7 +343,7 @@ function GoalCard({ goal, expanded, onToggle, onDelete, onAssign, onSimulate, on
             </div>
             {(goal.investments || []).length > 0 ? (
               <div className="space-y-1">
-                {goal.investments!.map((gi) => (
+                {goal.investments!.map((gi: GoalInvestment) => (
                   <div key={gi.investment_id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
                     <div className="flex items-center gap-2">
                       <span>{gi.scheme_name || gi.investment_name}{gi.folio_number ? ` (Folio: ${gi.folio_number})` : ''}</span>
