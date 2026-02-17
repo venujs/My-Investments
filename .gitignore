@@ -7,3 +7,8 @@ uploads/
 *.db-wal
 *.db-shm
 *.tsbuildinfo
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml

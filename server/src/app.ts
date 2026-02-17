@@ -23,6 +23,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp() {
   const app = express();
 
+  // Trust proxy for HTTPS behind EB's nginx
+  if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   app.use(cors({
     origin: true,
     credentials: true,
@@ -53,6 +58,7 @@ export function createApp() {
       maxAge: 30 * 24 * 60 * 60 * 1000,
       httpOnly: true,
       sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
     },
   }));
 

@@ -8,6 +8,9 @@
     "build": "npm run build -w shared && npm run build -w client && npm run build -w server",
     "start": "npm run start -w server"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "concurrently": "^9.1.0",
     "typescript": "^5.7.0"
