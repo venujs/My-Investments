@@ -4,7 +4,11 @@
       "Bash(npm run build:*)",
       "Bash(wc:*)",
       "Bash(git add:*)",
-      "Bash(git update-index:*)"
+      "Bash(git update-index:*)",
+      "Bash(ls:*)",
+      "Bash(npx --yes rimraf:*)",
+      "Bash(cmd /c \"rmdir /s /q node_modules\")",
+      "Bash(echo:*)"
     ]
   }
 }
