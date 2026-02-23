@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { snapshotsApi } from '@/api/snapshots';
+import { snapshotsApi, type SnapshotJobStatus } from '@/api/snapshots';
 
 export function useCalculateSnapshots() {
   const qc = useQueryClient();
@@ -35,6 +35,15 @@ export function useGenerateHistoricalSnapshots() {
       qc.invalidateQueries({ queryKey: ['analytics'] });
       qc.invalidateQueries({ queryKey: ['snapshots'] });
     },
+  });
+}
+
+// Polls every 2s while status is 'running', stops otherwise
+export function useSnapshotJobStatus() {
+  return useQuery<SnapshotJobStatus | null>({
+    queryKey: ['snapshots', 'job-status'],
+    queryFn: snapshotsApi.getJobStatus,
+    refetchInterval: (query) => query.state.data?.status === 'running' ? 2000 : false,
   });
 }
 

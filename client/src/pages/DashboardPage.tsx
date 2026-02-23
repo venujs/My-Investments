@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useDashboardStats, useNetWorthChart, useInvestmentBreakdown, useTypeHistory } from '@/hooks/useAnalytics';
-import { useCalculateSnapshots, useClearSnapshots, useGenerateHistoricalSnapshots } from '@/hooks/useSnapshots';
+import { useCalculateSnapshots, useClearSnapshots, useGenerateHistoricalSnapshots, useSnapshotJobStatus } from '@/hooks/useSnapshots';
 import { useFetchMarketData } from '@/hooks/useMarket';
 import { useGenerateRecurring } from '@/hooks/useRecurring';
+import { useQueryClient } from '@tanstack/react-query';
 import { InrAmount } from '@/components/shared/InrAmount';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatINR } from '@/lib/inr';
 import { CHART_COLORS, INVESTMENT_TYPE_LABELS } from '@/lib/constants';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Wallet, RefreshCw, Calculator, PieChart as PieChartIcon, Play, Trash2, Target, History } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, RefreshCw, Calculator, PieChart as PieChartIcon, Play, Trash2, Target, History, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { toast } from 'sonner';
 
@@ -25,6 +26,24 @@ export function DashboardPage() {
   const clearSnapshots = useClearSnapshots();
   const generateRecurring = useGenerateRecurring();
   const generateHistorical = useGenerateHistoricalSnapshots();
+  const { data: jobStatus } = useSnapshotJobStatus();
+  const qc = useQueryClient();
+
+  // Track previous status to fire toast only once on transition
+  const prevJobStatus = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevJobStatus.current;
+    const curr = jobStatus?.status;
+    if (prev === 'running' && curr === 'completed') {
+      toast.success(`Historical snapshots done — ${jobStatus?.monthsProcessed} months processed`);
+      qc.invalidateQueries({ queryKey: ['snapshots', 'list'] });
+      qc.invalidateQueries({ queryKey: ['snapshots', 'net-worth'] });
+      qc.invalidateQueries({ queryKey: ['analytics'] });
+    } else if (prev === 'running' && curr === 'failed') {
+      toast.error(`Historical snapshots failed: ${jobStatus?.error ?? 'unknown error'}`);
+    }
+    prevJobStatus.current = curr;
+  }, [jobStatus?.status]);
 
   const handleFetchMarket = () => {
     fetchMarket.mutate(undefined, {
@@ -101,6 +120,37 @@ export function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Historical snapshot job status banner */}
+      {jobStatus && (
+        <div className={`flex items-start gap-3 rounded-md border px-4 py-3 text-sm ${
+          jobStatus.status === 'running'  ? 'border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200' :
+          jobStatus.status === 'completed' ? 'border-green-300 bg-green-50 text-green-800 dark:border-green-700 dark:bg-green-950 dark:text-green-200' :
+          'border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950 dark:text-red-200'
+        }`}>
+          {jobStatus.status === 'running'   && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />}
+          {jobStatus.status === 'completed' && <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+          {jobStatus.status === 'failed'    && <XCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+          <div className="space-y-0.5">
+            {jobStatus.status === 'running' && (
+              <p className="font-medium">Generating historical snapshots… this runs in the background.</p>
+            )}
+            {jobStatus.status === 'completed' && (
+              <p className="font-medium">Historical snapshots completed — {jobStatus.monthsProcessed} months processed.</p>
+            )}
+            {jobStatus.status === 'failed' && (
+              <>
+                <p className="font-medium">Historical snapshot generation failed.</p>
+                <p className="font-mono text-xs break-all">{jobStatus.error}</p>
+              </>
+            )}
+            <p className="text-xs opacity-70">
+              Started {new Date(jobStatus.startedAt).toLocaleTimeString()}
+              {jobStatus.completedAt && ` · Finished ${new Date(jobStatus.completedAt).toLocaleTimeString()}`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
