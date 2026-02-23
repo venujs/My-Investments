@@ -45,4 +45,37 @@ router.put('/type-rates', (req, res) => {
   res.json({ ok: true });
 });
 
+// Nuclear option: wipe ALL user-created data across every table.
+// Keeps users and settings rows intact so login still works.
+router.post('/purge-all-data', (req, res) => {
+  const db = getDb();
+  db.transaction(() => {
+    // Delete in dependency order (FK enforcement may be off, but safest order regardless)
+    db.prepare('DELETE FROM lot_sell_allocations').run();
+    db.prepare('DELETE FROM investment_lots').run();
+    db.prepare('DELETE FROM investment_transactions').run();
+    db.prepare('DELETE FROM investment_overrides').run();
+    db.prepare('DELETE FROM monthly_snapshots').run();
+    db.prepare('DELETE FROM goal_investments').run();
+    db.prepare('DELETE FROM goals').run();
+    db.prepare('DELETE FROM net_worth_snapshots').run();
+    db.prepare('DELETE FROM recurring_rules').run();
+    db.prepare('DELETE FROM import_batches').run();
+    db.prepare('DELETE FROM investment_fd').run();
+    db.prepare('DELETE FROM investment_rd').run();
+    db.prepare('DELETE FROM investment_mf').run();
+    db.prepare('DELETE FROM investment_shares').run();
+    db.prepare('DELETE FROM investment_gold').run();
+    db.prepare('DELETE FROM investment_loan').run();
+    db.prepare('DELETE FROM investment_fixed_asset').run();
+    db.prepare('DELETE FROM investment_pension').run();
+    db.prepare('DELETE FROM investment_savings_account').run();
+    db.prepare('DELETE FROM investments').run();
+    db.prepare('DELETE FROM market_prices').run();
+    db.prepare('DELETE FROM gold_prices').run();
+  })();
+  console.log(`[PURGE] All data wiped by user ${req.session.userId}`);
+  res.json({ ok: true });
+});
+
 export default router;

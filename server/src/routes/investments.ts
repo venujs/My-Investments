@@ -17,6 +17,18 @@ router.post('/clear-all', (req, res) => {
   res.json({ deleted: count });
 });
 
+// Clear all investments of a specific type (use 'mf' to clear all three MF subtypes)
+router.post('/clear-by-type/:type', (req, res) => {
+  const { type } = req.params;
+  const userId = req.session.userId!;
+  const types = type === 'mf' ? ['mf_equity', 'mf_hybrid', 'mf_debt'] : [type];
+  let deleted = 0;
+  for (const t of types) {
+    deleted += investmentService.deleteAllInvestmentsByType(userId, t);
+  }
+  res.json({ deleted });
+});
+
 // Get all investments
 router.get('/', (req, res) => {
   const investments = investmentService.getAllInvestments();

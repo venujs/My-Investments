@@ -161,6 +161,24 @@ export async function initializeDbAsync(): Promise<void> {
     // Column already exists
   }
 
+  // Migration: rename amfi_code to isin_code in investment_mf
+  try {
+    db.exec(`ALTER TABLE investment_mf RENAME COLUMN amfi_code TO isin_code`);
+  } catch {
+    // Column already renamed or does not exist
+  }
+
+  // Migration: add scheme_code column to investment_mf for reliable NAV fetching
+  try {
+    db.exec(`ALTER TABLE investment_mf ADD COLUMN scheme_code TEXT`);
+  } catch {
+    // Column already exists
+  }
+  // For rows where isin_code is a legacy numeric AMFI code, copy it to scheme_code
+  try {
+    db.exec(`UPDATE investment_mf SET scheme_code = isin_code WHERE scheme_code IS NULL AND isin_code GLOB '[0-9]*'`);
+  } catch { /* ignore */ }
+
   saveToDisk();
 }
 

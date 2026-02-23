@@ -2,10 +2,24 @@ import { getDb } from '../db/connection.js';
 import { today } from '../utils/date.js';
 import { toPaise } from '../utils/inr.js';
 
-// Fetch MF NAV from mfapi.in
-export async function fetchMFNav(amfiCode: string): Promise<{ date: string; nav: number } | null> {
+// Resolve ISIN or legacy AMFI code to a numeric scheme code for mfapi.in
+async function resolveSchemeCode(isinCode: string): Promise<string | null> {
+  if (/^\d+$/.test(isinCode)) return isinCode; // already a numeric AMFI code
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/${amfiCode}/latest`);
+    const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(isinCode)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.length > 0) return String(data[0].schemeCode);
+  } catch { /* ignore */ }
+  return null;
+}
+
+// Fetch MF NAV from mfapi.in (accepts ISIN or legacy AMFI/scheme code)
+export async function fetchMFNav(isinCode: string): Promise<{ date: string; nav: number } | null> {
+  try {
+    const schemeCode = await resolveSchemeCode(isinCode);
+    if (!schemeCode) return null;
+    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}/latest`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.data && data.data.length > 0) {
@@ -18,7 +32,23 @@ export async function fetchMFNav(amfiCode: string): Promise<{ date: string; nav:
     }
     return null;
   } catch (err) {
-    console.error(`Error fetching MF NAV for ${amfiCode}:`, err);
+    console.error(`Error fetching MF NAV for ${isinCode}:`, err);
+    return null;
+  }
+}
+
+// Fetch ISIN and details for a scheme code (for UI auto-fill)
+export async function fetchSchemeDetails(schemeCode: string): Promise<{ isin: string; isin_reinvestment: string | null; scheme_name: string | null } | null> {
+  try {
+    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      isin: data.meta?.isin_div_payout_or_growth || '',
+      isin_reinvestment: data.meta?.isin_div_reinvestment || null,
+      scheme_name: data.meta?.scheme_name || null,
+    };
+  } catch {
     return null;
   }
 }
@@ -101,13 +131,14 @@ export async function fetchAllMarketData(): Promise<{ mf: number; stocks: number
 
   // Fetch MF NAVs for all active MF investments
   const mfInvestments = db.prepare(
-    `SELECT DISTINCT m.amfi_code FROM investment_mf m JOIN investments i ON m.investment_id = i.id WHERE i.is_active = 1`
-  ).all() as { amfi_code: string }[];
+    `SELECT DISTINCT m.isin_code, m.scheme_code FROM investment_mf m JOIN investments i ON m.investment_id = i.id WHERE i.is_active = 1`
+  ).all() as { isin_code: string; scheme_code: string | null }[];
 
-  for (const { amfi_code } of mfInvestments) {
-    const nav = await fetchMFNav(amfi_code);
+  for (const { isin_code, scheme_code } of mfInvestments) {
+    const identifier = scheme_code || isin_code;
+    const nav = await fetchMFNav(identifier);
     if (nav) {
-      cacheMarketPrice(amfi_code, 'mfapi', nav.date, toPaise(nav.nav));
+      cacheMarketPrice(identifier, 'mfapi', nav.date, toPaise(nav.nav));
       mfCount++;
     }
   }
@@ -192,9 +223,11 @@ export function getCachedPriceForDate(symbol: string, source: string | string[],
 }
 
 // Fetch full MF NAV history from mfapi.in and cache all entries
-export async function fetchMFNavHistory(amfiCode: string): Promise<{ date: string; nav: number }[]> {
+export async function fetchMFNavHistory(isinCode: string): Promise<{ date: string; nav: number }[]> {
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/${amfiCode}`);
+    const schemeCode = await resolveSchemeCode(isinCode);
+    if (!schemeCode) return [];
+    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`);
     if (!res.ok) return [];
     const data = await res.json();
     if (!data.data || !Array.isArray(data.data)) return [];
@@ -206,36 +239,47 @@ export async function fetchMFNavHistory(amfiCode: string): Promise<{ date: strin
       const parts = entry.date.split('-');
       const date = `${parts[2]}-${parts[1]}-${parts[0]}`;
       results.push({ date, nav });
-      cacheMarketPrice(amfiCode, 'mfapi', date, Math.round(nav * 100));
+    }
+    // Batch-insert all entries in a single transaction to avoid blocking the event loop
+    if (results.length > 0) {
+      const db = getDb();
+      const insertStmt = db.prepare(
+        `INSERT OR REPLACE INTO market_prices (symbol, source, date, price_paise) VALUES (?, ?, ?, ?)`
+      );
+      db.transaction(() => {
+        for (const { date, nav } of results) {
+          insertStmt.run(isinCode, 'mfapi', date, Math.round(nav * 100));
+        }
+      })();
     }
     return results;
   } catch (err) {
-    console.error(`Error fetching MF NAV history for ${amfiCode}:`, err);
+    console.error(`Error fetching MF NAV history for ${isinCode}:`, err);
     return [];
   }
 }
 
 // Get MF NAV for a specific date (cache first, then API fallback)
-export async function fetchMFNavForDate(amfiCode: string, targetDate: string): Promise<{ date: string; pricePaise: number } | null> {
+export async function fetchMFNavForDate(isinCode: string, targetDate: string): Promise<{ date: string; pricePaise: number } | null> {
   // Check cache first
-  const cached = getCachedPriceForDate(amfiCode, 'mfapi', targetDate);
+  const cached = getCachedPriceForDate(isinCode, 'mfapi', targetDate);
   if (cached) return { date: cached.date, pricePaise: cached.price_paise };
 
   // Fetch full history and cache
-  const history = await fetchMFNavHistory(amfiCode);
+  const history = await fetchMFNavHistory(isinCode);
   if (history.length === 0) {
     // Fallback to latest
-    const latest = await fetchMFNav(amfiCode);
+    const latest = await fetchMFNav(isinCode);
     if (latest) {
       const pricePaise = Math.round(latest.nav * 100);
-      cacheMarketPrice(amfiCode, 'mfapi', latest.date, pricePaise);
+      cacheMarketPrice(isinCode, 'mfapi', latest.date, pricePaise);
       return { date: latest.date, pricePaise };
     }
     return null;
   }
 
   // Look up from cache again after populating
-  const cachedAfter = getCachedPriceForDate(amfiCode, 'mfapi', targetDate);
+  const cachedAfter = getCachedPriceForDate(isinCode, 'mfapi', targetDate);
   if (cachedAfter) return { date: cachedAfter.date, pricePaise: cachedAfter.price_paise };
 
   // If target date is before all available history, use earliest
@@ -250,10 +294,18 @@ export async function fetchStockPriceForDate(ticker: string, exchange: string, t
   const cached = getCachedPriceForDate(ticker, ['yahoo', 'manual'], targetDate);
   if (cached) return { date: cached.date, pricePaise: cached.price_paise };
 
-  // Fetch 1yr history and cache all
+  // Fetch 1yr history and batch-insert all in a single transaction
   const history = await fetchStockHistory(ticker, exchange);
-  for (const h of history) {
-    cacheMarketPrice(ticker, 'yahoo', h.date, h.price_paise);
+  if (history.length > 0) {
+    const db = getDb();
+    const insertStmt = db.prepare(
+      `INSERT OR REPLACE INTO market_prices (symbol, source, date, price_paise) VALUES (?, ?, ?, ?)`
+    );
+    db.transaction(() => {
+      for (const h of history) {
+        insertStmt.run(ticker, 'yahoo', h.date, h.price_paise);
+      }
+    })();
   }
 
   // Look up again after caching

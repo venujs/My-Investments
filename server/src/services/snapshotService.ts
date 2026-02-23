@@ -3,8 +3,9 @@ import { currentYearMonth, today } from '../utils/date.js';
 import * as investmentService from './investmentService.js';
 import * as transactionService from './transactionService.js';
 import * as valuationService from './valuationService.js';
+import * as goalService from './goalService.js';
 import * as calc from './calculationService.js';
-import { getCachedPriceForDate, getCachedGoldPriceForDate, fetchMFNavForDate, fetchStockPriceForDate } from './marketDataService.js';
+import { fetchMFNavForDate, fetchStockPriceForDate } from './marketDataService.js';
 import type { DashboardStats, InvestmentBreakdown, Investment } from 'shared';
 import { InvestmentTypeLabels } from 'shared';
 
@@ -62,10 +63,24 @@ export function calculateNetWorthSnapshot(userId: number, yearMonth?: string): v
 
   const netWorth = totalValue - totalDebt;
 
+  // Compute current goal values
+  const goalsSnapshot: Record<string, { name: string; value: number; target: number; progress: number }> = {};
+  try {
+    const goals = goalService.getAllGoals(userId);
+    for (const goal of goals) {
+      goalsSnapshot[String(goal.id)] = {
+        name: goal.name,
+        value: goal.current_value_paise || 0,
+        target: goal.target_amount_paise,
+        progress: goal.progress_percent || 0,
+      };
+    }
+  } catch { /* non-critical */ }
+
   db.prepare(
     `INSERT OR REPLACE INTO net_worth_snapshots (user_id, year_month, total_invested_paise, total_value_paise, total_debt_paise, net_worth_paise, breakdown_json)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, ym, totalInvested, totalValue, totalDebt, netWorth, JSON.stringify(breakdown));
+  ).run(userId, ym, totalInvested, totalValue, totalDebt, netWorth, JSON.stringify({ ...breakdown, _goals: goalsSnapshot }));
 }
 
 export function getNetWorthHistory(userId: number): any[] {
@@ -176,8 +191,8 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
     case 'mf_hybrid':
     case 'mf_debt': {
       const units = transactionService.getTotalUnitsAsOf(investment.id, targetDate);
-      if (units > 0 && detail.amfi_code) {
-        const navData = await fetchMFNavForDate(detail.amfi_code, targetDate);
+      if (units > 0 && detail.isin_code) {
+        const navData = await fetchMFNavForDate(detail.scheme_code || detail.isin_code, targetDate);
         if (navData) {
           value = Math.round(units * navData.pricePaise);
         }
@@ -195,10 +210,14 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
       break;
     }
     case 'gold': {
-      const goldPrice = getCachedGoldPriceForDate(targetDate);
-      if (goldPrice) {
+      if (detail.weight_grams && detail.purchase_price_per_gram_paise) {
+        const rateRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('rate_gold') as { value: string } | undefined;
+        const goldRate = rateRow ? parseFloat(rateRow.value) : 8;
+        const purchaseDate = detail.purchase_date || targetDate;
+        const yearsElapsed = Math.max(0, (new Date(targetDate).getTime() - new Date(purchaseDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
         const purityFactor = detail.purity === '24K' ? 1.0 : detail.purity === '22K' ? 22 / 24 : 18 / 24;
-        value = Math.round(detail.weight_grams * goldPrice.price_per_gram_paise * purityFactor);
+        const purchaseTotal = Math.round(detail.weight_grams * detail.purchase_price_per_gram_paise * purityFactor);
+        value = Math.round(purchaseTotal * Math.pow(1 + goldRate / 100, yearsElapsed));
       }
       break;
     }
@@ -227,6 +246,54 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
   return { invested: Math.max(0, invested), value: Math.max(0, value) };
 }
 
+// Build historical cashflows for XIRR calculation up to a given target date
+function buildHistoricalCashflows(investment: Investment, targetDate: string): { date: string; amount: number }[] {
+  const db = getDb();
+  const txns = db.prepare(
+    `SELECT txn_type, date, amount_paise FROM investment_transactions WHERE investment_id = ? AND date <= ? ORDER BY date ASC`
+  ).all(investment.id, targetDate) as { txn_type: string; date: string; amount_paise: number }[];
+
+  if (txns.length > 0) {
+    return txns.map(t => ({
+      date: t.date,
+      amount: ['buy', 'sip', 'deposit', 'premium'].includes(t.txn_type) ? -t.amount_paise : t.amount_paise,
+    }));
+  }
+
+  // Synthetic fallback for instruments with no transaction records
+  const detail = investment.detail;
+  if (!detail) return [];
+  const cashflows: { date: string; amount: number }[] = [];
+  switch (investment.investment_type) {
+    case 'fd':
+      if (detail.principal_paise && detail.start_date && detail.start_date <= targetDate)
+        cashflows.push({ date: detail.start_date, amount: -detail.principal_paise });
+      break;
+    case 'rd':
+      if (detail.monthly_installment_paise && detail.start_date) {
+        const d = new Date(detail.start_date);
+        const end = new Date(targetDate);
+        while (d <= end) {
+          cashflows.push({ date: d.toISOString().split('T')[0], amount: -detail.monthly_installment_paise });
+          d.setMonth(d.getMonth() + 1);
+        }
+      }
+      break;
+    case 'fixed_asset':
+      if (detail.purchase_price_paise && detail.purchase_date && detail.purchase_date <= targetDate)
+        cashflows.push({ date: detail.purchase_date, amount: -detail.purchase_price_paise });
+      break;
+    case 'gold':
+      if (detail.weight_grams && detail.purchase_price_per_gram_paise) {
+        const pd = detail.purchase_date || targetDate;
+        if (pd <= targetDate)
+          cashflows.push({ date: pd, amount: -Math.round(detail.weight_grams * detail.purchase_price_per_gram_paise) });
+      }
+      break;
+  }
+  return cashflows;
+}
+
 // Generate historical snapshots for last 36 months + last 10 years
 export async function generateHistoricalSnapshots(userId: number): Promise<number> {
   const db = getDb();
@@ -249,26 +316,68 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
     targetMonths.add(`${year}-01`);
   }
 
-  const sortedMonths = Array.from(targetMonths).sort();
+  // Delete existing snapshots for all target months before regenerating
+  const ymArr = Array.from(targetMonths);
+  const ph = ymArr.map(() => '?').join(',');
+  db.prepare(
+    `DELETE FROM monthly_snapshots WHERE year_month IN (${ph}) AND investment_id IN (SELECT id FROM investments WHERE user_id = ?)`
+  ).run(...ymArr, userId);
+  db.prepare(
+    `DELETE FROM net_worth_snapshots WHERE user_id = ? AND year_month IN (${ph})`
+  ).run(userId, ...ymArr);
+
+  const sortedMonths = ymArr.sort();
   let processed = 0;
 
-  for (const ym of sortedMonths) {
-    // Target date is last day of the month
-    const [y, m] = ym.split('-').map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    const targetDate = `${ym}-${String(lastDay).padStart(2, '0')}`;
+  // Fetch investments once outside the loop — they don't change between months
+  const investments = investmentService.getAllInvestments(userId);
 
-    // Get all investments that existed at this date
-    const investments = investmentService.getAllInvestments(userId);
+  // Pre-compute the first transaction date per investment in one batch query.
+  // Used as the effective start date for MF, shares, pension, savings_account
+  // (whose detail records have no start_date / purchase_date field).
+  const firstTxnDateMap = new Map<number, string>();
+  if (investments.length > 0) {
+    const invIds = investments.map(i => i.id);
+    const phInv = invIds.map(() => '?').join(',');
+    (db.prepare(
+      `SELECT investment_id, MIN(date) as first_date FROM investment_transactions WHERE investment_id IN (${phInv}) GROUP BY investment_id`
+    ).all(...invIds) as { investment_id: number; first_date: string }[])
+      .forEach(r => firstTxnDateMap.set(r.investment_id, r.first_date));
+  }
+
+  for (const ym of sortedMonths) {
+    // Target date is the 1st of the month (user spec: "values on 1st day of the month")
+    const targetDate = `${ym}-01`;
+
+    // Filter to investments that actually existed at targetDate.
+    // Use the investment's real financial start date, NOT the DB created_at timestamp
+    // (created_at is when the record was entered, which is often much later than the actual start).
     const activeInvestments = investments.filter(inv => {
+      const detail = inv.detail;
       const createdDate = inv.created_at ? inv.created_at.split('T')[0].split(' ')[0] : todayStr;
-      return createdDate <= targetDate;
+      let startDate: string;
+      switch (inv.investment_type) {
+        case 'fd':
+        case 'rd':
+        case 'loan':
+          startDate = detail?.start_date || createdDate;
+          break;
+        case 'gold':
+        case 'fixed_asset':
+          startDate = detail?.purchase_date || createdDate;
+          break;
+        default:
+          // mf_equity, mf_hybrid, mf_debt, shares, pension, savings_account:
+          // use first transaction date; fall back to created_at if no transactions yet
+          startDate = firstTxnDateMap.get(inv.id) || createdDate;
+      }
+      return startDate <= targetDate;
     });
 
     let totalInvested = 0;
     let totalValue = 0;
     let totalDebt = 0;
-    const breakdown: Record<string, { invested: number; value: number; count: number }> = {};
+    const breakdown: Record<string, { invested: number; value: number; count: number; gain: number; gain_percent: number; xirr: number | null }> = {};
 
     for (const inv of activeInvestments) {
       const { invested, value } = await calculateHistoricalValue(inv, targetDate);
@@ -287,20 +396,77 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
       }
 
       if (!breakdown[inv.investment_type]) {
-        breakdown[inv.investment_type] = { invested: 0, value: 0, count: 0 };
+        breakdown[inv.investment_type] = { invested: 0, value: 0, count: 0, gain: 0, gain_percent: 0, xirr: null };
       }
       breakdown[inv.investment_type].invested += invested;
       breakdown[inv.investment_type].value += value;
       breakdown[inv.investment_type].count += 1;
     }
 
+    // Compute gain, gain_percent, and XIRR per investment type
+    for (const type of Object.keys(breakdown)) {
+      const bkd = breakdown[type];
+      if (type === 'loan') {
+        bkd.gain = 0;
+        bkd.gain_percent = 0;
+        bkd.xirr = null;
+        continue;
+      }
+      bkd.gain = bkd.value - bkd.invested;
+      bkd.gain_percent = bkd.invested > 0 ? ((bkd.value - bkd.invested) / bkd.invested) * 100 : 0;
+
+      const typeInvs = activeInvestments.filter(inv => inv.investment_type === type);
+      const cashflows: { date: string; amount: number }[] = [];
+      for (const inv of typeInvs) {
+        cashflows.push(...buildHistoricalCashflows(inv, targetDate));
+      }
+      if (cashflows.length > 0 && bkd.value > 0) {
+        cashflows.sort((a, b) => a.date.localeCompare(b.date));
+        cashflows.push({ date: targetDate, amount: bkd.value });
+        const xirr = calc.calculateXIRR(cashflows);
+        bkd.xirr = xirr !== null ? Math.round(xirr * 10000) / 100 : null;
+      } else {
+        bkd.xirr = null;
+      }
+    }
+
     const netWorth = totalValue - totalDebt;
+
+    // Compute historical goal values using just-inserted monthly_snapshots
+    const histGoals: Record<string, { name: string; value: number; target: number; progress: number }> = {};
+    const userGoals = db.prepare(
+      `SELECT id, name, target_amount_paise FROM goals WHERE user_id = ?`
+    ).all(userId) as { id: number; name: string; target_amount_paise: number }[];
+    for (const goal of userGoals) {
+      const gis = db.prepare(
+        `SELECT gi.investment_id, gi.allocation_percent, i.investment_type
+         FROM goal_investments gi
+         JOIN investments i ON gi.investment_id = i.id
+         WHERE gi.goal_id = ?`
+      ).all(goal.id) as { investment_id: number; allocation_percent: number; investment_type: string }[];
+      let goalValue = 0;
+      for (const gi of gis) {
+        const snap = db.prepare(
+          `SELECT current_value_paise FROM monthly_snapshots WHERE investment_id = ? AND year_month = ?`
+        ).get(gi.investment_id, ym) as { current_value_paise: number } | undefined;
+        if (snap) {
+          const contribution = Math.round(snap.current_value_paise * (gi.allocation_percent / 100));
+          if (gi.investment_type === 'loan') goalValue -= contribution;
+          else goalValue += contribution;
+        }
+      }
+      const progress = goal.target_amount_paise > 0 ? (goalValue / goal.target_amount_paise) * 100 : 0;
+      histGoals[String(goal.id)] = { name: goal.name, value: goalValue, target: goal.target_amount_paise, progress };
+    }
+
     db.prepare(
       `INSERT OR REPLACE INTO net_worth_snapshots (user_id, year_month, total_invested_paise, total_value_paise, total_debt_paise, net_worth_paise, breakdown_json)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, ym, totalInvested, totalValue, totalDebt, netWorth, JSON.stringify(breakdown));
+    ).run(userId, ym, totalInvested, totalValue, totalDebt, netWorth, JSON.stringify({ ...breakdown, _goals: histGoals }));
 
     processed++;
+    // Yield the event loop so HTTP requests can be processed between months
+    await new Promise<void>(resolve => setImmediate(resolve));
   }
 
   return processed;

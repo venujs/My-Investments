@@ -85,7 +85,7 @@ export function DashboardPage() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => {
             generateHistorical.mutate(undefined, {
-              onSuccess: (data) => toast.success(`Generated ${data.months_processed} historical snapshots`),
+              onSuccess: () => toast.success('Historical snapshot generation started in background'),
               onError: () => toast.error('Failed to generate historical snapshots'),
             });
           }} disabled={generateHistorical.isPending}>

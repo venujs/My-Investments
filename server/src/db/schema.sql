@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS investment_rd (
 
 CREATE TABLE IF NOT EXISTS investment_mf (
   investment_id INTEGER PRIMARY KEY REFERENCES investments(id) ON DELETE CASCADE,
-  amfi_code TEXT NOT NULL,
+  isin_code TEXT NOT NULL,
+  scheme_code TEXT,
   scheme_name TEXT,
   folio_number TEXT,
   amc TEXT

@@ -52,13 +52,24 @@ router.post('/price', (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/fetch-mf/:amfiCode', async (req, res) => {
+router.post('/fetch-mf/:isinCode', async (req, res) => {
   try {
-    const nav = await marketDataService.fetchMFNav(req.params.amfiCode);
+    const { isinCode } = req.params;
+    const nav = await marketDataService.fetchMFNav(isinCode);
     if (!nav) { res.status(404).json({ error: 'Could not fetch NAV' }); return; }
     const { toPaise } = await import('../utils/inr.js');
-    marketDataService.cacheMarketPrice(req.params.amfiCode, 'mfapi', nav.date, toPaise(nav.nav));
+    marketDataService.cacheMarketPrice(isinCode, 'mfapi', nav.date, toPaise(nav.nav));
     res.json({ date: nav.date, nav: nav.nav, price_paise: toPaise(nav.nav) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/mf/scheme/:schemeCode', async (req, res) => {
+  try {
+    const details = await marketDataService.fetchSchemeDetails(req.params.schemeCode);
+    if (!details) { res.status(404).json({ error: 'Scheme not found' }); return; }
+    res.json(details);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

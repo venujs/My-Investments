@@ -9,24 +9,28 @@ const upload = multer({ dest: 'uploads/' });
 const router = Router();
 router.use(requireAuth);
 
-// Upload CSV for preview
-router.post('/import/upload', upload.single('file'), (req, res) => {
+// Upload CSV and process import
+router.post('/import/upload', upload.single('file'), async (req, res) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+  const investmentType = req.body.investment_type;
+  if (!investmentType) {
+    fs.unlinkSync(req.file.path);
+    res.status(400).json({ error: 'investment_type is required' });
+    return;
+  }
   const content = fs.readFileSync(req.file.path, 'utf-8');
-  const { headers, rows } = importService.parseCSV(content);
   fs.unlinkSync(req.file.path);
-  res.json({ headers, rowCount: rows.length, preview: rows.slice(0, 5) });
-});
-
-// Execute import
-router.post('/import/execute', (req, res) => {
-  const batch = importService.createBatch(
-    req.body.investment_type,
-    req.body.filename || 'import.csv',
-    req.body.row_count || 0,
-    req.body.mapping || {}
-  );
-  res.json(batch);
+  try {
+    const result = await importService.processImport(
+      req.session.userId!,
+      investmentType,
+      content,
+      req.file.originalname || 'import.csv'
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Import failed' });
+  }
 });
 
 // Get CSV template

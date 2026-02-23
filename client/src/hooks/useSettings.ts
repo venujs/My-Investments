@@ -17,3 +17,13 @@ export function useUpdateTypeRates() {
     },
   });
 }
+
+export function usePurgeAllData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: settingsApi.purgeAllData,
+    onSuccess: () => {
+      qc.invalidateQueries();
+    },
+  });
+}

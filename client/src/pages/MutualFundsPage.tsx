@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment, useUpdateInvestment } from '@/hooks/useInvestments';
+import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment, useUpdateInvestment, useClearInvestmentsByType } from '@/hooks/useInvestments';
 import { useInvestmentTransactions, useCreateTransaction, useSell, useDeleteTransaction } from '@/hooks/useTransactions';
 import { useSearchMF } from '@/hooks/useMarket';
 import { InrAmount } from '@/components/shared/InrAmount';
@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InvestmentSummaryCard } from '@/components/shared/InvestmentSummaryCard';
 import { useTypeXIRR } from '@/hooks/useAnalytics';
-import { TrendingUp, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search, RefreshCw } from 'lucide-react';
+import { TrendingUp, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search, RefreshCw, CheckSquare } from 'lucide-react';
 import { toPaise, formatINR } from '@/lib/inr';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -34,15 +34,46 @@ export function MutualFundsPage() {
   // Compute combined XIRR as weighted average or just show individual ones — for simplicity, we don't combine
   const createInvestment = useCreateInvestment();
   const deleteInvestment = useDeleteInvestment();
+  const clearAll = useClearInvestmentsByType();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [listSearch, setListSearch] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  const toggleSelect = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    for (const id of selectedIds) {
+      try { await deleteInvestment.mutateAsync(id); } catch { /* continue */ }
+    }
+    toast.success(`${selectedIds.size} deleted`);
+    setSelectedIds(new Set()); setSelectMode(false); setShowBulkDeleteConfirm(false);
+  };
+
+  const filtered = investments.filter(inv => {
+    if (!listSearch.trim()) return true;
+    const q = listSearch.toLowerCase();
+    const d = inv.detail || {};
+    return inv.name.toLowerCase().includes(q)
+      || (d.scheme_name || '').toLowerCase().includes(q)
+      || (d.amc || '').toLowerCase().includes(q)
+      || (d.isin_code || '').toLowerCase().includes(q);
+  });
 
   // Form
   const [name, setName] = useState('');
   const [mfType, setMfType] = useState<string>('mf_equity');
   const [searchQuery, setSearchQuery] = useState('');
-  const [amfiCode, setAmfiCode] = useState('');
+  const [isinCode, setIsinCode] = useState('');
+  const [schemeCode, setSchemeCode] = useState('');
   const [schemeName, setSchemeName] = useState('');
   const [folioNumber, setFolioNumber] = useState('');
   const [amc, setAmc] = useState('');
@@ -50,20 +81,26 @@ export function MutualFundsPage() {
 
   const { data: searchResults = [] } = useSearchMF(searchQuery);
 
-  const resetForm = () => { setName(''); setMfType('mf_equity'); setSearchQuery(''); setAmfiCode(''); setSchemeName(''); setFolioNumber(''); setAmc(''); setNotes(''); };
+  const resetForm = () => { setName(''); setMfType('mf_equity'); setSearchQuery(''); setIsinCode(''); setSchemeCode(''); setSchemeName(''); setFolioNumber(''); setAmc(''); setNotes(''); };
 
-  const handleSelectScheme = (scheme: { schemeCode: string; schemeName: string }) => {
-    setAmfiCode(scheme.schemeCode);
+  const handleSelectScheme = async (scheme: { schemeCode: string; schemeName: string }) => {
     setSchemeName(scheme.schemeName);
+    setSchemeCode(scheme.schemeCode);
     if (!name) setName(scheme.schemeName);
     setSearchQuery('');
+    try {
+      const details = await marketApi.getSchemeDetails(scheme.schemeCode);
+      setIsinCode(details.isin || scheme.schemeCode);
+    } catch {
+      setIsinCode(scheme.schemeCode); // fallback to scheme code if ISIN unavailable
+    }
   };
 
   const handleCreate = () => {
-    if (!name.trim() || !amfiCode) { toast.error('Name and AMFI code required'); return; }
+    if (!name.trim() || !isinCode) { toast.error('Name and ISIN code required'); return; }
     createInvestment.mutate({
       investment: { investment_type: mfType, name: name.trim(), notes: notes || null },
-      detail: { amfi_code: amfiCode, scheme_name: schemeName || null, folio_number: folioNumber || null, amc: amc || null },
+      detail: { isin_code: isinCode, scheme_code: schemeCode || null, scheme_name: schemeName || null, folio_number: folioNumber || null, amc: amc || null },
     }, {
       onSuccess: () => { toast.success('Mutual fund added'); setShowForm(false); resetForm(); },
       onError: () => toast.error('Failed'),
@@ -74,17 +111,48 @@ export function MutualFundsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Mutual Funds</h1>
-        <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Fund</Button>
+        <div className="flex items-center gap-2">
+          {investments.length > 0 && (
+            <>
+              {selectMode && selectedIds.size > 0 && (
+                <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setShowBulkDeleteConfirm(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete ({selectedIds.size})
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()); }}>
+                <CheckSquare className="mr-2 h-4 w-4" /> {selectMode ? 'Cancel' : 'Select'}
+              </Button>
+              <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setShowClearConfirm(true)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Clear All
+              </Button>
+            </>
+          )}
+          <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Fund</Button>
+        </div>
       </div>
 
       <InvestmentSummaryCard investments={investments} xirr={xirrEquity?.xirr ?? xirrHybrid?.xirr ?? xirrDebt?.xirr} />
 
+      {investments.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9" placeholder="Search by name, scheme or AMC..." value={listSearch} onChange={e => setListSearch(e.target.value)} />
+        </div>
+      )}
+
       {investments.length === 0 ? (
         <EmptyState icon={TrendingUp} title="No Mutual Funds" description="Add your mutual fund investments" action={<Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Fund</Button>} />
+      ) : filtered.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">No results for "{listSearch}"</p>
       ) : (
         <div className="grid gap-4">
-          {investments.map((inv) => (
-            <MFCard key={inv.id} investment={inv} expanded={expandedId === inv.id} onToggle={() => setExpandedId(expandedId === inv.id ? null : inv.id)} onDelete={() => setDeleteId(inv.id)} />
+          {filtered.map((inv) => (
+            <div key={inv.id} className="flex items-center gap-2">
+              {selectMode && <input type="checkbox" checked={selectedIds.has(inv.id)} onChange={() => toggleSelect(inv.id)} className="h-4 w-4 shrink-0 cursor-pointer accent-primary" />}
+              <div className="flex-1 min-w-0">
+                <MFCard investment={inv} expanded={expandedId === inv.id} onToggle={() => setExpandedId(expandedId === inv.id ? null : inv.id)} onDelete={() => setDeleteId(inv.id)} />
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -122,13 +190,14 @@ export function MutualFundsPage() {
             </div>
             <div className="grid gap-2"><Label>Name *</Label><Input value={name} onChange={e => setName(e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2"><Label>AMFI Code *</Label><Input value={amfiCode} onChange={e => setAmfiCode(e.target.value)} /></div>
-              <div className="grid gap-2"><Label>Folio Number</Label><Input value={folioNumber} onChange={e => setFolioNumber(e.target.value)} /></div>
+              <div className="grid gap-2"><Label>ISIN Code *</Label><Input value={isinCode} onChange={e => setIsinCode(e.target.value)} placeholder="e.g. INF179K01VC6" /></div>
+              <div className="grid gap-2"><Label>AMFI Code</Label><Input value={schemeCode} onChange={e => setSchemeCode(e.target.value)} placeholder="e.g. 120503 (auto-filled by search)" /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Folio Number</Label><Input value={folioNumber} onChange={e => setFolioNumber(e.target.value)} /></div>
               <div className="grid gap-2"><Label>AMC</Label><Input value={amc} onChange={e => setAmc(e.target.value)} /></div>
-              <div className="grid gap-2"><Label>Notes</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
             </div>
+            <div className="grid gap-2"><Label>Notes</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
@@ -138,6 +207,8 @@ export function MutualFundsPage() {
       </Dialog>
 
       <ConfirmDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)} title="Delete Fund" description="This will permanently delete this mutual fund and all transactions." onConfirm={() => { if (deleteId) deleteInvestment.mutate(deleteId, { onSuccess: () => { toast.success('Deleted'); setDeleteId(null); } }); }} confirmLabel="Delete" destructive />
+      <ConfirmDialog open={showClearConfirm} onOpenChange={setShowClearConfirm} title="Clear All Mutual Funds" description="This will permanently delete all mutual funds (equity, hybrid, debt) and their transactions. This cannot be undone." onConfirm={() => clearAll.mutate('mf', { onSuccess: () => { toast.success('All mutual funds cleared'); setShowClearConfirm(false); }, onError: () => toast.error('Failed to clear') })} confirmLabel="Clear All" destructive />
+      <ConfirmDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm} title={`Delete ${selectedIds.size} fund(s)`} description="This will permanently delete the selected mutual funds and their transactions." onConfirm={handleBulkDelete} confirmLabel="Delete" destructive />
     </div>
   );
 }
@@ -202,18 +273,19 @@ function MFCard({ investment, expanded, onToggle, onDelete }: { investment: Inve
       {expanded && (
         <CardContent className="border-t pt-4">
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-            <div><span className="text-muted-foreground">AMFI:</span> {d.amfi_code}</div>
+            <div><span className="text-muted-foreground">ISIN:</span> {d.isin_code}</div>
+            {d.scheme_code && <div><span className="text-muted-foreground">AMFI:</span> {d.scheme_code}</div>}
             <div><span className="text-muted-foreground">Invested:</span> <InrAmount paise={investment.invested_amount_paise || 0} /></div>
             {investment.xirr != null && <div><span className="text-muted-foreground">XIRR:</span> {investment.xirr.toFixed(1)}%</div>}
             {d.total_units > 0 && <div><span className="text-muted-foreground">Units:</span> {d.total_units.toFixed(3)}</div>}
             {d.latest_nav_paise && <div><span className="text-muted-foreground">NAV:</span> {formatINR(d.latest_nav_paise)}</div>}
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            {d.amfi_code && (
+            {(d.scheme_code || d.isin_code) && (
               <Button variant="outline" size="sm" disabled={fetchingNav} onClick={async () => {
                 setFetchingNav(true);
                 try {
-                  const result = await marketApi.fetchMFNav(d.amfi_code);
+                  const result = await marketApi.fetchMFNav(d.scheme_code || d.isin_code);
                   toast.success(`NAV fetched: ₹${result.nav}`);
                   qc.invalidateQueries({ queryKey: ['investments'] });
                 } catch { toast.error('Failed to fetch NAV'); }

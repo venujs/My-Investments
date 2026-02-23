@@ -25,18 +25,23 @@ export function calculateFDMaturityValue(principalPaise: number, interestRate: n
   return calculateFDValue(principalPaise, interestRate, compounding, startDate, maturityDate);
 }
 
-// RD: Sum of each installment compounded for its remaining time
+// RD: Sum of each installment compounded from its payment date to asOfDate.
+// Installments are counted by calendar months (same day-of-month as startDate),
+// which avoids the yearsBetween*12 floating-point undercount.
 export function calculateRDValue(monthlyInstallmentPaise: number, interestRate: number, compounding: string, startDate: string, asOfDate?: string): number {
   const n = compoundingPeriodsPerYear(compounding);
   const r = interestRate / 100;
-  const effectiveDate = asOfDate || today();
-  const totalMonths = Math.max(0, Math.floor(yearsBetween(startDate, effectiveDate) * 12));
+  const end = new Date(asOfDate || today());
+  const start = new Date(startDate);
+  if (end < start) return 0;
 
   let totalValue = 0;
-  for (let i = 0; i < totalMonths; i++) {
-    const monthsRemaining = totalMonths - i;
-    const t = monthsRemaining / 12;
-    totalValue += monthlyInstallmentPaise * Math.pow(1 + r / n, n * t);
+  const d = new Date(start);
+  while (d <= end) {
+    // Exact compounding time in years from this installment's date to the evaluation date
+    const yearsCompounded = (end.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    totalValue += monthlyInstallmentPaise * Math.pow(1 + r / n, n * yearsCompounded);
+    d.setMonth(d.getMonth() + 1);
   }
   return Math.round(totalValue);
 }

@@ -60,7 +60,8 @@ export interface RDDetail {
 
 export interface MFDetail {
   investment_id: number;
-  amfi_code: string;
+  isin_code: string;
+  scheme_code: string | null;
   scheme_name: string | null;
   folio_number: string | null;
   amc: string | null;

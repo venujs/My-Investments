@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSnapshotList, useSnapshotDetail } from '@/hooks/useSnapshots';
+import { useSnapshotList } from '@/hooks/useSnapshots';
 import { InrAmount } from '@/components/shared/InrAmount';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -66,68 +66,73 @@ function SnapshotRow({ snapshot, expanded, onToggle }: { snapshot: any; expanded
           </div>
         </div>
       </CardHeader>
-      {expanded && <SnapshotDetail yearMonth={snapshot.year_month} breakdown={snapshot.breakdown_json} />}
+      {expanded && <SnapshotDetail breakdown={snapshot.breakdown_json} />}
     </Card>
   );
 }
 
-function SnapshotDetail({ yearMonth, breakdown }: { yearMonth: string; breakdown?: string }) {
-  const { data: detail = [], isLoading } = useSnapshotDetail(yearMonth);
+function SnapshotDetail({ breakdown }: { breakdown?: string }) {
+  const bkd: Record<string, any> = breakdown ? (() => { try { return JSON.parse(breakdown); } catch { return {}; } })() : {};
 
-  // Group detail by investment_type
-  const grouped: Record<string, { type: string; label: string; investments: any[]; totalInvested: number; totalValue: number }> = {};
-  for (const item of detail) {
-    if (!grouped[item.investment_type]) {
-      grouped[item.investment_type] = {
-        type: item.investment_type,
-        label: (INVESTMENT_TYPE_LABELS as any)[item.investment_type] || item.investment_type,
-        investments: [],
-        totalInvested: 0,
-        totalValue: 0,
-      };
-    }
-    grouped[item.investment_type].investments.push(item);
-    grouped[item.investment_type].totalInvested += item.invested_paise;
-    grouped[item.investment_type].totalValue += item.current_value_paise;
-  }
+  const goalData: Record<string, { name: string; value: number; target: number; progress: number }> = bkd._goals || {};
+  const typeKeys = Object.keys(bkd).filter(k => k !== '_goals').sort((a, b) => {
+    const la = (INVESTMENT_TYPE_LABELS as any)[a] || a;
+    const lb = (INVESTMENT_TYPE_LABELS as any)[b] || b;
+    return la.localeCompare(lb);
+  });
 
-  const groups = Object.values(grouped).sort((a, b) => a.label.localeCompare(b.label));
+  const goalEntries = Object.values(goalData);
 
-  if (isLoading) {
-    return <CardContent className="border-t py-4 text-sm text-muted-foreground">Loading...</CardContent>;
-  }
-
-  if (groups.length === 0) {
-    return <CardContent className="border-t py-4 text-sm text-muted-foreground">No investment data for this snapshot.</CardContent>;
+  if (typeKeys.length === 0 && goalEntries.length === 0) {
+    return <CardContent className="border-t py-4 text-sm text-muted-foreground">No data for this snapshot.</CardContent>;
   }
 
   return (
-    <CardContent className="border-t pt-4 space-y-4">
-      {groups.map((group) => (
-        <div key={group.type} className="space-y-1">
-          <div className="flex items-center justify-between text-sm font-medium">
+    <CardContent className="border-t pt-4 space-y-2">
+      {typeKeys.map(type => {
+        const td = bkd[type];
+        return (
+          <div key={type} className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
-              <span>{group.label}</span>
-              <Badge variant="secondary" className="text-xs">{group.investments.length}</Badge>
+              <span className="font-medium">{(INVESTMENT_TYPE_LABELS as any)[type] || type}</span>
+              {td.count != null && <Badge variant="secondary" className="text-xs">{td.count}</Badge>}
+              {td.gain_percent != null && (
+                <span className={`text-xs ${td.gain_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {td.gain_percent.toFixed(1)}%
+                </span>
+              )}
+              {td.xirr != null && (
+                <span className="text-xs text-muted-foreground">XIRR: {td.xirr.toFixed(1)}%</span>
+              )}
             </div>
             <div className="flex gap-6 text-xs">
-              <span className="text-muted-foreground">Invested: <InrAmount paise={group.totalInvested} /></span>
-              <span>Value: <InrAmount paise={group.totalValue} /></span>
+              <span className="text-muted-foreground">Invested: <InrAmount paise={td.invested} /></span>
+              <span>Value: <InrAmount paise={td.value} /></span>
             </div>
           </div>
-          <div className="ml-4 space-y-0.5">
-            {group.investments.map((inv: any) => (
-              <div key={inv.investment_id} className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{inv.investment_name}</span>
-                <div className="flex gap-4">
-                  <span>Invested: <InrAmount paise={inv.invested_paise} /></span>
-                  <span>Value: <InrAmount paise={inv.current_value_paise} /></span>
+        );
+      })}
+      {goalEntries.length > 0 && (
+        <div className="border-t pt-3 mt-1">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Goals</p>
+          <div className="space-y-1">
+            {goalEntries.map((g: any) => (
+              <div key={g.name} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <span>{g.name}</span>
+                  <span className={`text-xs ${g.progress >= 100 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                    {g.progress.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <span className="text-muted-foreground">Target: <InrAmount paise={g.target} /></span>
+                  <span>Value: <InrAmount paise={g.value} /></span>
                 </div>
               </div>
             ))}
           </div>
         </div>
-      ))}
+      )}
     </CardContent>
   );
 }

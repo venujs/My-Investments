@@ -16,14 +16,12 @@ router.get('/net-worth', (req, res) => {
   res.json(history);
 });
 
-router.post('/generate-historical', async (req, res) => {
-  try {
-    const count = await snapshotService.generateHistoricalSnapshots(req.session.userId!);
-    res.json({ months_processed: count });
-  } catch (err: any) {
-    console.error('Error generating historical snapshots:', err);
-    res.status(500).json({ error: err.message });
-  }
+router.post('/generate-historical', (req, res) => {
+  const userId = req.session.userId!;
+  res.json({ started: true });
+  snapshotService.generateHistoricalSnapshots(userId)
+    .then(count => console.log(`Historical snapshots: ${count} months processed for user ${userId}`))
+    .catch(err => console.error('Error generating historical snapshots:', err));
 });
 
 router.get('/list', (req, res) => {

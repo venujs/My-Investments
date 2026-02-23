@@ -13,19 +13,33 @@ export function ImportPage() {
   const [investmentType, setInvestmentType] = useState('fd');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const handleUpload = async () => {
     if (!file) { toast.error('Select a file'); return; }
     setUploading(true);
+    setImportErrors([]);
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('investment_type', investmentType);
-      await api.upload('/import/upload', formData);
-      toast.success('Import successful');
+      const result = await api.upload<{ created: number; transactions: number; errors: string[] }>(
+        '/import/upload', formData
+      );
+      const parts: string[] = [];
+      if (result.created > 0) parts.push(`${result.created} investment${result.created !== 1 ? 's' : ''} created`);
+      if (result.transactions > 0) parts.push(`${result.transactions} transaction${result.transactions !== 1 ? 's' : ''} added`);
+      if (parts.length === 0) parts.push('Nothing imported');
+      if (result.errors?.length) {
+        setImportErrors(result.errors);
+        toast.warning(`Import complete: ${parts.join(', ')} (${result.errors.length} row${result.errors.length !== 1 ? 's' : ''} skipped)`);
+      } else {
+        toast.success(`Import successful: ${parts.join(', ')}`);
+      }
       setFile(null);
-    } catch {
-      toast.error('Import failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Import failed';
+      toast.error(`Import failed: ${message}`);
     } finally {
       setUploading(false);
     }
@@ -66,6 +80,18 @@ export function ImportPage() {
               Download Template
             </Button>
           </div>
+          {importErrors.length > 0 && (
+            <div className="mt-2">
+              <p className="text-sm font-medium text-amber-700 mb-1">
+                {importErrors.length} row{importErrors.length !== 1 ? 's' : ''} skipped due to errors:
+              </p>
+              <div className="max-h-40 overflow-y-auto rounded border border-amber-200 bg-amber-50 p-2 space-y-1">
+                {importErrors.map((err, i) => (
+                  <p key={i} className="text-xs font-mono text-amber-900">{err}</p>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

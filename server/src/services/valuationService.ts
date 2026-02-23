@@ -32,7 +32,8 @@ export function getCurrentValue(investment: Investment): number {
     case 'mf_hybrid':
     case 'mf_debt': {
       const units = transactionService.getTotalUnits(investment.id);
-      const latestNav = getLatestMarketPrice(detail.amfi_code, 'mfapi');
+      const navIdentifier = detail.scheme_code || detail.isin_code;
+      const latestNav = getLatestMarketPrice(navIdentifier, 'mfapi');
       return latestNav ? Math.round(units * latestNav) : 0;
     }
 
@@ -83,10 +84,12 @@ export function enrichInvestment(investment: Investment): Investment {
         invested = detail.principal_paise || 0;
         break;
       case 'rd': {
-        // Calculate total installments paid so far
-        const monthsPaid = Math.max(0, Math.floor(
-          ((new Date().getTime()) - new Date(detail.start_date).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
-        ));
+        // Count installments by calendar months (same logic as calculateRDValue)
+        const rdStart = new Date(detail.start_date);
+        const rdNow = new Date();
+        let monthsPaid = 0;
+        const rdD = new Date(rdStart);
+        while (rdD <= rdNow) { monthsPaid++; rdD.setMonth(rdD.getMonth() + 1); }
         invested = (detail.monthly_installment_paise || 0) * monthsPaid;
         break;
       }
@@ -105,15 +108,17 @@ export function enrichInvestment(investment: Investment): Investment {
   investment.current_value_paise = currentValue;
   investment.invested_amount_paise = invested;
 
-  // Attach latest market price for shares
+  // Attach latest market price and total units for shares
   if (investment.investment_type === 'shares' && investment.detail?.ticker_symbol) {
     const latestPrice = getLatestMarketPrice(investment.detail.ticker_symbol, ['yahoo', 'manual']);
     if (latestPrice) investment.detail.latest_price_paise = latestPrice;
+    investment.detail.total_units = transactionService.getTotalUnits(investment.id);
   }
 
   // Attach latest NAV and total units for mutual funds
-  if (['mf_equity', 'mf_hybrid', 'mf_debt'].includes(investment.investment_type) && investment.detail?.amfi_code) {
-    const latestNav = getLatestMarketPrice(investment.detail.amfi_code, 'mfapi');
+  if (['mf_equity', 'mf_hybrid', 'mf_debt'].includes(investment.investment_type) && investment.detail?.isin_code) {
+    const navIdentifier = investment.detail.scheme_code || investment.detail.isin_code;
+    const latestNav = getLatestMarketPrice(navIdentifier, 'mfapi');
     if (latestNav) investment.detail.latest_nav_paise = latestNav;
     investment.detail.total_units = transactionService.getTotalUnits(investment.id);
   }

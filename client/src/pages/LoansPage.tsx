@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment } from '@/hooks/useInvestments';
+import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment, useClearInvestmentsByType } from '@/hooks/useInvestments';
 import { useInvestmentTransactions, useCreateTransaction, useDeleteTransaction } from '@/hooks/useTransactions';
 import { InrAmount } from '@/components/shared/InrAmount';
 import { AmountInput } from '@/components/shared/AmountInput';
@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InvestmentSummaryCard } from '@/components/shared/InvestmentSummaryCard';
-import { CircleDollarSign, Plus, Trash2, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
+import { CircleDollarSign, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search, CheckSquare } from 'lucide-react';
 import { toPaise, formatINR } from '@/lib/inr';
 import { toast } from 'sonner';
 import type { Investment } from 'shared';
@@ -23,9 +23,38 @@ export function LoansPage() {
   const { data: investments = [] } = useInvestmentsByType('loan');
   const createInvestment = useCreateInvestment();
   const deleteInvestment = useDeleteInvestment();
+  const clearAll = useClearInvestmentsByType();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  const toggleSelect = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    for (const id of selectedIds) {
+      try { await deleteInvestment.mutateAsync(id); } catch { /* continue */ }
+    }
+    toast.success(`${selectedIds.size} deleted`);
+    setSelectedIds(new Set()); setSelectMode(false); setShowBulkDeleteConfirm(false);
+  };
+
+  const filtered = investments.filter(inv => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const d = inv.detail || {};
+    return inv.name.toLowerCase().includes(q)
+      || (d.lender || '').toLowerCase().includes(q)
+      || (d.loan_type || '').toLowerCase().includes(q);
+  });
 
   const [name, setName] = useState('');
   const [loanType, setLoanType] = useState('home');
@@ -58,17 +87,48 @@ export function LoansPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Loans</h1>
-        <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Loan</Button>
+        <div className="flex items-center gap-2">
+          {investments.length > 0 && (
+            <>
+              {selectMode && selectedIds.size > 0 && (
+                <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setShowBulkDeleteConfirm(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete ({selectedIds.size})
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()); }}>
+                <CheckSquare className="mr-2 h-4 w-4" /> {selectMode ? 'Cancel' : 'Select'}
+              </Button>
+              <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setShowClearConfirm(true)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Clear All
+              </Button>
+            </>
+          )}
+          <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Loan</Button>
+        </div>
       </div>
 
       <InvestmentSummaryCard investments={investments} isLoan />
 
+      {investments.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9" placeholder="Search by name or lender..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      )}
+
       {investments.length === 0 ? (
         <EmptyState icon={CircleDollarSign} title="No Loans" description="Add your loans to track outstanding amounts" action={<Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add Loan</Button>} />
+      ) : filtered.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">No results for "{search}"</p>
       ) : (
         <div className="grid gap-4">
-          {investments.map((inv) => (
-            <LoanCard key={inv.id} investment={inv} expanded={expandedId === inv.id} onToggle={() => setExpandedId(expandedId === inv.id ? null : inv.id)} onDelete={() => setDeleteId(inv.id)} />
+          {filtered.map((inv) => (
+            <div key={inv.id} className="flex items-center gap-2">
+              {selectMode && <input type="checkbox" checked={selectedIds.has(inv.id)} onChange={() => toggleSelect(inv.id)} className="h-4 w-4 shrink-0 cursor-pointer accent-primary" />}
+              <div className="flex-1 min-w-0">
+                <LoanCard investment={inv} expanded={expandedId === inv.id} onToggle={() => setExpandedId(expandedId === inv.id ? null : inv.id)} onDelete={() => setDeleteId(inv.id)} />
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -110,6 +170,8 @@ export function LoansPage() {
       </Dialog>
 
       <ConfirmDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)} title="Delete Loan" description="This will permanently delete this loan." onConfirm={() => { if (deleteId) deleteInvestment.mutate(deleteId, { onSuccess: () => { toast.success('Deleted'); setDeleteId(null); } }); }} confirmLabel="Delete" destructive />
+      <ConfirmDialog open={showClearConfirm} onOpenChange={setShowClearConfirm} title="Clear All Loans" description="This will permanently delete all loans and their transactions. This cannot be undone." onConfirm={() => clearAll.mutate('loan', { onSuccess: () => { toast.success('All loans cleared'); setShowClearConfirm(false); }, onError: () => toast.error('Failed to clear') })} confirmLabel="Clear All" destructive />
+      <ConfirmDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm} title={`Delete ${selectedIds.size} loan(s)`} description="This will permanently delete the selected loans." onConfirm={handleBulkDelete} confirmLabel="Delete" destructive />
     </div>
   );
 }

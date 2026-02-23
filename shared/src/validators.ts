@@ -72,7 +72,8 @@ export const rdDetailSchema = z.object({
 });
 
 export const mfDetailSchema = z.object({
-  amfi_code: z.string().min(1).max(20),
+  isin_code: z.string().min(1).max(20),
+  scheme_code: z.string().max(20).nullable().optional(),
   scheme_name: z.string().max(300).nullable().optional(),
   folio_number: z.string().max(100).nullable().optional(),
   amc: z.string().max(200).nullable().optional(),

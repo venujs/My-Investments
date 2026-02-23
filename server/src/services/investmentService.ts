@@ -157,6 +157,28 @@ export function deleteAllInvestments(userId?: number): number {
   return result.changes;
 }
 
+export function deleteAllInvestmentsByType(userId: number, investmentType: string): number {
+  const db = getDb();
+  const invIds = (db.prepare(
+    'SELECT id FROM investments WHERE user_id = ? AND investment_type = ?'
+  ).all(userId, investmentType) as { id: number }[]).map(r => r.id);
+
+  if (invIds.length === 0) return 0;
+  const ph = invIds.map(() => '?').join(',');
+
+  // Explicit cascade: foreign_keys pragma is not enabled by default in sql.js
+  db.prepare(`DELETE FROM lot_sell_allocations WHERE sell_txn_id IN (SELECT id FROM investment_transactions WHERE investment_id IN (${ph}))`).run(...invIds);
+  db.prepare(`DELETE FROM investment_lots WHERE investment_id IN (${ph})`).run(...invIds);
+  db.prepare(`DELETE FROM investment_transactions WHERE investment_id IN (${ph})`).run(...invIds);
+  db.prepare(`DELETE FROM recurring_rules WHERE investment_id IN (${ph})`).run(...invIds);
+  db.prepare(`DELETE FROM monthly_snapshots WHERE investment_id IN (${ph})`).run(...invIds);
+  db.prepare(`DELETE FROM investment_overrides WHERE investment_id IN (${ph})`).run(...invIds);
+  db.prepare(`DELETE FROM goal_investments WHERE investment_id IN (${ph})`).run(...invIds);
+
+  const result = db.prepare('DELETE FROM investments WHERE user_id = ? AND investment_type = ?').run(userId, investmentType);
+  return result.changes;
+}
+
 export function addOverride(investmentId: number, userId: number, overrideDate: string, valuePaise: number, reason: string | null): void {
   const db = getDb();
   db.prepare(

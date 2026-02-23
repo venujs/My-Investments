@@ -42,8 +42,7 @@ export function GoalsPage() {
 
   // Assign investment state
   const [assignGoalId, setAssignGoalId] = useState<number | null>(null);
-  const [assignInvestmentId, setAssignInvestmentId] = useState('');
-  const [assignPercent, setAssignPercent] = useState('100');
+  const [assignSelections, setAssignSelections] = useState<Map<number, number>>(new Map());
   const [assignFilterType, setAssignFilterType] = useState('all');
 
   // Simulation state
@@ -74,17 +73,31 @@ export function GoalsPage() {
     !assignedInvestmentIds.has(inv.id) && (assignFilterType === 'all' || inv.investment_type === assignFilterType)
   );
 
+  const toggleAssignSelection = (id: number) => {
+    const next = new Map(assignSelections);
+    if (next.has(id)) next.delete(id);
+    else next.set(id, 100);
+    setAssignSelections(next);
+  };
+
+  const setAssignPct = (id: number, pct: number) => {
+    const next = new Map(assignSelections);
+    next.set(id, pct);
+    setAssignSelections(next);
+  };
+
   const handleAssign = async () => {
-    if (!assignGoalId || !assignInvestmentId) { toast.error('Select an investment'); return; }
+    if (!assignGoalId || assignSelections.size === 0) { toast.error('Select at least one investment'); return; }
     try {
-      await goalsApi.assignInvestment(assignGoalId, { investment_id: parseInt(assignInvestmentId), allocation_percent: parseFloat(assignPercent) || 100 });
-      toast.success('Investment assigned');
+      for (const [invId, pct] of assignSelections) {
+        await goalsApi.assignInvestment(assignGoalId, { investment_id: invId, allocation_percent: pct });
+      }
+      toast.success(`${assignSelections.size} investment(s) assigned`);
       qc.invalidateQueries({ queryKey: ['goals'] });
       setAssignGoalId(null);
-      setAssignInvestmentId('');
-      setAssignPercent('100');
-    } catch {
-      toast.error('Failed to assign');
+      setAssignSelections(new Map());
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to assign');
     }
   };
 
@@ -124,7 +137,7 @@ export function GoalsPage() {
               expanded={expandedId === goal.id}
               onToggle={() => setExpandedId(expandedId === goal.id ? null : goal.id)}
               onDelete={() => setDeleteId(goal.id)}
-              onAssign={() => { setAssignGoalId(goal.id); setAssignInvestmentId(''); }}
+              onAssign={() => { setAssignGoalId(goal.id); setAssignSelections(new Map()); }}
               onSimulate={() => { setSimGoalId(goal.id); setSimResult(null); }}
               onRemoveInvestment={(invId) => handleRemoveInvestment(goal.id, invId)}
             />
@@ -155,13 +168,13 @@ export function GoalsPage() {
       </Dialog>
 
       {/* Assign Investment Dialog */}
-      <Dialog open={assignGoalId !== null} onOpenChange={() => { setAssignGoalId(null); setAssignFilterType('all'); }}>
+      <Dialog open={assignGoalId !== null} onOpenChange={() => { setAssignGoalId(null); setAssignSelections(new Map()); setAssignFilterType('all'); }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Assign Investment to Goal</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Assign Investments to Goal</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Filter by Type</Label>
-              <Select value={assignFilterType} onValueChange={(v) => { setAssignFilterType(v); setAssignInvestmentId(''); }}>
+              <Select value={assignFilterType} onValueChange={(v) => { setAssignFilterType(v); setAssignSelections(new Map()); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
@@ -172,26 +185,52 @@ export function GoalsPage() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Investment</Label>
-              <Select value={assignInvestmentId} onValueChange={setAssignInvestmentId}>
-                <SelectTrigger><SelectValue placeholder="Select investment" /></SelectTrigger>
-                <SelectContent>
-                  {availableInvestments.map((inv: any) => (
-                    <SelectItem key={inv.id} value={String(inv.id)}>
-                      {inv.name}{inv.detail?.folio_number ? ` (${inv.detail.folio_number})` : ''} ({INVESTMENT_TYPE_LABELS[inv.investment_type] || inv.investment_type})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Allocation %</Label>
-              <Input type="number" min="0" max="100" step="1" value={assignPercent} onChange={e => setAssignPercent(e.target.value)} />
+              <Label>Select Investments</Label>
+              {availableInvestments.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No available investments</p>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-1 rounded border p-2">
+                  {availableInvestments.map((inv: any) => {
+                    const isSelected = assignSelections.has(inv.id);
+                    return (
+                      <div key={inv.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleAssignSelection(inv.id)}
+                          className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
+                        />
+                        <span className="flex-1 text-sm truncate">
+                          {inv.name}{inv.detail?.folio_number ? ` (${inv.detail.folio_number})` : ''}{' '}
+                          <span className="text-xs text-muted-foreground">({INVESTMENT_TYPE_LABELS[inv.investment_type] || inv.investment_type})</span>
+                        </span>
+                        {isSelected && (
+                          <>
+                            <Input
+                              type="number" min="0" max="100" step="1"
+                              value={assignSelections.get(inv.id) ?? 100}
+                              onChange={e => setAssignPct(inv.id, parseFloat(e.target.value) || 100)}
+                              className="w-16 h-7 text-xs px-1"
+                              onClick={e => e.stopPropagation()}
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {assignSelections.size > 0 && (
+                <p className="text-xs text-muted-foreground">{assignSelections.size} selected</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignGoalId(null)}>Cancel</Button>
-            <Button onClick={handleAssign}>Assign</Button>
+            <Button variant="outline" onClick={() => { setAssignGoalId(null); setAssignSelections(new Map()); }}>Cancel</Button>
+            <Button onClick={handleAssign} disabled={assignSelections.size === 0}>
+              Assign {assignSelections.size > 0 ? `(${assignSelections.size})` : ''}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

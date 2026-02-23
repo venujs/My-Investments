@@ -29,6 +29,18 @@ export function useUpdateInvestment() {
   });
 }
 
+export function useClearInvestmentsByType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (type: string) => investmentsApi.clearByType(type),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['investments'] });
+      qc.invalidateQueries({ queryKey: ['analytics'] });
+      qc.invalidateQueries({ queryKey: ['goals'] });
+    },
+  });
+}
+
 export function useClearAllInvestments() {
   const qc = useQueryClient();
   return useMutation({

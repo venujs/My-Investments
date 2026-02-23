@@ -9,7 +9,7 @@ export function exportInvestments(investmentType?: string, userId?: number): str
     : investmentService.getAllInvestments(userId);
 
   const rows: string[][] = [];
-  rows.push(['ID', 'Type', 'Name', 'Institution', 'Invested (INR)', 'Current Value (INR)', 'Gain (INR)', 'Gain %', 'Active']);
+  rows.push(['ID', 'Type', 'Name', 'Institution', 'ISIN Code', 'AMFI Code', 'Invested (INR)', 'Current Value (INR)', 'Gain (INR)', 'Gain %', 'Active']);
 
   for (const inv of investments) {
     const enriched = valuationService.enrichInvestment(inv);
@@ -18,6 +18,8 @@ export function exportInvestments(investmentType?: string, userId?: number): str
       inv.investment_type,
       inv.name,
       inv.institution || '',
+      (inv.detail as any)?.isin_code || '',
+      (inv.detail as any)?.scheme_code || '',
       toRupees(enriched.invested_amount_paise || 0).toFixed(2),
       toRupees(enriched.current_value_paise || 0).toFixed(2),
       toRupees(enriched.gain_paise || 0).toFixed(2),

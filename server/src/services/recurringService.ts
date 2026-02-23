@@ -99,7 +99,7 @@ export function deleteRule(id: number): boolean {
 export async function generateRecurringTransactions(): Promise<number> {
   const db = getDb();
   const rules = db.prepare(
-    `SELECT r.*, i.user_id as inv_user_id, i.investment_type, mf.amfi_code, s.ticker_symbol, s.exchange
+    `SELECT r.*, i.user_id as inv_user_id, i.investment_type, mf.isin_code, mf.scheme_code, s.ticker_symbol, s.exchange
      FROM recurring_rules r
      JOIN investments i ON r.investment_id = i.id
      LEFT JOIN investment_mf mf ON i.id = mf.investment_id
@@ -130,8 +130,8 @@ export async function generateRecurringTransactions(): Promise<number> {
 
       // For MF investments, fetch date-specific NAV and compute units
       const isMF = ['mf_equity', 'mf_hybrid', 'mf_debt'].includes(rule.investment_type);
-      if (isMF && rule.amfi_code) {
-        const navData = await fetchMFNavForDate(rule.amfi_code, nextDate);
+      if (isMF && rule.isin_code) {
+        const navData = await fetchMFNavForDate(rule.scheme_code || rule.isin_code, nextDate);
         if (navData && navData.pricePaise > 0) {
           txnData.units = rule.amount_paise / navData.pricePaise;
           txnData.price_per_unit_paise = navData.pricePaise;

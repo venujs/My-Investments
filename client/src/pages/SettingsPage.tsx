@@ -4,13 +4,14 @@ import { useCalculateSnapshots, useClearSnapshots } from '@/hooks/useSnapshots';
 import { useFetchMarketData } from '@/hooks/useMarket';
 import { useClearAllInvestments } from '@/hooks/useInvestments';
 import { useClearAllTransactions } from '@/hooks/useTransactions';
-import { useTypeRates, useUpdateTypeRates } from '@/hooks/useSettings';
+import { useTypeRates, useUpdateTypeRates, usePurgeAllData } from '@/hooks/useSettings';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Settings, RefreshCw, Calculator, Trash2, AlertTriangle, Save } from 'lucide-react';
+import { Settings, RefreshCw, Calculator, Trash2, AlertTriangle, Save, Skull } from 'lucide-react';
 import { toast } from 'sonner';
 
 const RATE_LABELS: Record<string, string> = {
@@ -34,12 +35,15 @@ export function SettingsPage() {
   const clearSnapshots = useClearSnapshots();
   const clearAllInvestments = useClearAllInvestments();
   const clearAllTransactions = useClearAllTransactions();
+  const purgeAllData = usePurgeAllData();
   const { data: typeRates } = useTypeRates();
   const updateTypeRates = useUpdateTypeRates();
   const [rates, setRates] = useState<Record<string, number>>({});
   const [showClear, setShowClear] = useState(false);
   const [showClearTxns, setShowClearTxns] = useState(false);
   const [showClearInv, setShowClearInv] = useState(false);
+  const [showPurge, setShowPurge] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
 
   useEffect(() => {
     if (typeRates) setRates(typeRates);
@@ -126,6 +130,18 @@ export function SettingsPage() {
           <Button variant="outline" className="w-full justify-start text-destructive" onClick={() => setShowClearInv(true)}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete All Investments
           </Button>
+          <div className="border border-destructive rounded-md p-3 space-y-2">
+            <p className="text-xs text-destructive font-semibold uppercase tracking-wide">Nuclear Option</p>
+            <p className="text-xs text-muted-foreground">Wipes every investment, transaction, goal, snapshot, recurring rule, and market cache across all users. Users and login credentials are preserved.</p>
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => { setPurgeConfirmText(''); setShowPurge(true); }}
+              disabled={purgeAllData.isPending}
+            >
+              <Skull className="mr-2 h-4 w-4" /> Purge All Data
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -134,6 +150,60 @@ export function SettingsPage() {
       <ConfirmDialog open={showClearTxns} onOpenChange={setShowClearTxns} title="Clear All Transactions" description="This will permanently delete ALL transactions, lots, and sell allocations. This cannot be undone." onConfirm={() => { clearAllTransactions.mutate(undefined, { onSuccess: () => { toast.success('All transactions cleared'); setShowClearTxns(false); }, onError: () => toast.error('Failed') }); }} confirmLabel="Clear All Transactions" destructive />
 
       <ConfirmDialog open={showClearInv} onOpenChange={setShowClearInv} title="Delete All Investments" description="This will permanently delete ALL investments and their associated data (transactions, overrides, etc). This cannot be undone." onConfirm={() => { clearAllInvestments.mutate(undefined, { onSuccess: () => { toast.success('All investments deleted'); setShowClearInv(false); }, onError: () => toast.error('Failed') }); }} confirmLabel="Delete All Investments" destructive />
+
+      <Dialog open={showPurge} onOpenChange={(o) => { if (!purgeAllData.isPending) { setShowPurge(o); setPurgeConfirmText(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Skull className="h-5 w-5" /> Purge All Data
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm">This will permanently delete <strong>everything</strong>:</p>
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+              <li>All investments (FD, RD, MF, shares, gold, loans, etc.)</li>
+              <li>All transactions, FIFO lots, sell allocations</li>
+              <li>All goals and goal assignments</li>
+              <li>All snapshots and net worth history</li>
+              <li>All recurring rules and import batches</li>
+              <li>All cached market prices and gold prices</li>
+            </ul>
+            <p className="text-sm font-medium">User accounts and settings are kept intact.</p>
+            <p className="text-sm text-destructive font-semibold">This cannot be undone.</p>
+            <div className="space-y-1">
+              <Label htmlFor="purge-confirm" className="text-sm">Type <span className="font-mono font-bold">PURGE</span> to confirm</Label>
+              <Input
+                id="purge-confirm"
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+                placeholder="PURGE"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowPurge(false); setPurgeConfirmText(''); }} disabled={purgeAllData.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={purgeConfirmText !== 'PURGE' || purgeAllData.isPending}
+              onClick={() => {
+                purgeAllData.mutate(undefined, {
+                  onSuccess: () => {
+                    toast.success('All data purged');
+                    setShowPurge(false);
+                    setPurgeConfirmText('');
+                  },
+                  onError: () => toast.error('Purge failed'),
+                });
+              }}
+            >
+              <Skull className="mr-2 h-4 w-4" /> {purgeAllData.isPending ? 'Purging...' : 'Purge Everything'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
