@@ -401,6 +401,9 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
       breakdown[inv.investment_type].invested += invested;
       breakdown[inv.investment_type].value += value;
       breakdown[inv.investment_type].count += 1;
+
+      // Yield after every investment so HTTP requests can be served
+      await new Promise<void>(resolve => setImmediate(resolve));
     }
 
     // Compute gain, gain_percent, and XIRR per investment type
@@ -428,6 +431,9 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
       } else {
         bkd.xirr = null;
       }
+
+      // Yield after each XIRR computation (Newton-Raphson is CPU-intensive)
+      await new Promise<void>(resolve => setImmediate(resolve));
     }
 
     const netWorth = totalValue - totalDebt;
