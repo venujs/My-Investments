@@ -8,7 +8,12 @@
       "Bash(ls:*)",
       "Bash(npx --yes rimraf:*)",
       "Bash(cmd /c \"rmdir /s /q node_modules\")",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(eb:*)",
+      "Bash(npm install:*)",
+      "Bash(git commit:*)",
+      "Bash(xxd:*)",
+      "Bash(head:*)"
     ]
   }
 }

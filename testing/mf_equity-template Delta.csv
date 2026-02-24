@@ -1,0 +1,51 @@
+name,isin_code,amfi_code,scheme_name,amc,folio_number,txn_type,date,amount_rupees,units,nav
+# REQUIRED; text,REQUIRED; ISIN code (e.g. INF...),numeric code from mfapi.in (auto-resolved from ISIN if blank),text,text (fund house name),text,buy|sip|sell,REQUIRED; YYYY-MM-DD,REQUIRED; number in rupees,number,number in rupees
+# Mirae Asset Large Cap,INF846K01ZM8,120503,Mirae Asset Large Cap Fund - Regular Plan,Mirae Asset,12345678,sip,1/15/2024,10000,45.678,218.95
+Motilal Oswal Flexi Cap Regular Growth Plan,INF247L01528,129047,Motilal Oswal Flexi Cap Regular Growth Plan,,91012748842,buy,    2022-01-06,1999.9,56.896,35.1501
+HDFC Hybrid Equity Regular Growth Plan,INF179K01AS4,102948,HDFC Hybrid Equity Regular Growth Plan,,10825996/37,buy,    2022-01-06,1999.9,25.041,79.866
+HDFC Hybrid Debt Growth Plan,INF179K01AE4,102147,HDFC Hybrid Debt Growth Plan,,10853606/45,buy,    2022-01-06,999.95,16.76,59.6633
+Kotak Flexicap Growth Plan,INF174K01336,112090,Kotak Flexicap Growth Plan,,3900867/61,buy,    2022-01-06,999.95,18.739,53.362
+Kotak Flexicap Growth Plan,INF174K01336,112090,Kotak Flexicap Growth Plan,,3900867/61,buy,    2022-01-06,1999.9,37.478,53.362
+Mirae Asset Large Cap Regular Growth Plan,INF769K01010,107578,Mirae Asset Large Cap Regular Growth Plan,,7993233136,buy,    2022-01-06,1499.93,18.644,80.45
+Mirae Asset Large Cap Regular Growth Plan,INF769K01010,107578,Mirae Asset Large Cap Regular Growth Plan,,79911180851,buy,    2022-01-06,1999.9,24.859,80.45
+SBI Large Cap Growth Plan,INF200K01164,103616,SBI Large Cap Growth Plan,,14956452,buy,    2022-01-06,999.95,16.145,61.935
+SBI Midcap Growth Plan,INF200K01560,102941,SBI Midcap Growth Plan,,14956452,buy,    2022-01-06,999.95,6.956,143.7519
+ICICI Prudential Large Cap Growth Plan,INF109K01BL4,108466,ICICI Prudential Large Cap Growth Plan,,7976487/51,buy,    2022-01-06,1499.93,22.545,66.53
+ICICI Prudential Large Cap Growth Plan,INF109K01BL4,108466,ICICI Prudential Large Cap Growth Plan,,7976487/51,buy,    2022-01-06,999.95,15.03,66.53
+HDFC BSE Sensex Index Regular Growth Plan,INF179K01LA9,101281,HDFC BSE Sensex Index Regular Growth Plan,,10372451/53,buy,    2022-01-06,1999.9,3.74,534.748
+HDFC Mid Cap Growth Plan,INF179K01CR2,105758,HDFC Mid Cap Growth Plan,,10372451/53,buy,    2022-01-06,999.95,10.827,92.354
+Mirae Asset Large & Midcap Growth Direct Plan,INF769K01BI1,118834,Mirae Asset Large & Midcap Growth Direct Plan,,7993233136,buy,    2022-01-05,4999.75,45.662,109.494
+UTI Flexi Cap Growth Direct Plan,INF789F01TA8,120663,UTI Flexi Cap Growth Direct Plan,,5.99305E+11,buy,    2022-01-05,4999.75,17.51,285.5399
+Axis Large Cap Growth Direct Plan,INF846K01DN3,120466,Axis Large Cap Growth Direct Plan,,91062128393,buy,    2022-01-03,4999.75,94.836,52.72
+HDFC Corporate Bond Growth Direct Plan,INF179K01XD8,118987,HDFC Corporate Bond Growth Direct Plan,,11104373/76,buy,    2021-12-13,9999.5,380.748,26.2628
+Franklin India Income Opportunities Growth Plan,INF090I01445,112304,Franklin India Income Opportunities Growth Plan,,19773349,sell,    2021-12-12,93.4,3.746,24.9338
+Franklin India Ultra Short Bond Super Institutional Growth Plan,INF090I01CG8,107248,Franklin India Ultra Short Bond Super Institutional Growth Plan,,19773349,sell,    2021-12-10,49.83,1.533,32.5064
+ICICI Prudential Large Cap Growth Direct Plan,INF109K016L0,120586,ICICI Prudential Large Cap Growth Direct Plan,,8841618/87,buy,    2021-12-09,4999.75,70.908,70.51
+ICICI Prudential Large Cap Growth Plan,INF109K01BL4,108466,ICICI Prudential Large Cap Growth Plan,,8631711/84,buy,    2021-12-07,999.95,15.544,64.33
+Tata Aggressive Hybrid Growth Plan,INF277K01303,100414,Tata Aggressive Hybrid Growth Plan,,3556322/64,buy,    2021-12-07,3999.8,13.361,299.3575
+HDFC Short Term Debt Regular Growth Plan,INF179K01CV4,113048,HDFC Short Term Debt Regular Growth Plan,,10927499/11,buy,    2021-12-07,1999.9,78.5,25.4764
+Franklin India Mid Cap Growth Plan,INF090I01809,100473,Franklin India Mid Cap Growth Plan,,19773349,buy,    2021-12-07,2999.85,1.991,1506.8159
+Aditya Birla Sun Life Corporate Bond Regular Growth Plan,INF209K01785,103178,Aditya Birla Sun Life Corporate Bond Regular Growth Plan,,1038758180,buy,    2021-12-06,999.95,11.222,89.1055
+DSP Credit Risk Regular Growth Plan,INF740K01599,101837,DSP Credit Risk Regular Growth Plan,,5254039/92,buy,    2021-12-06,999.95,32.45,30.8148
+Motilal Oswal Flexi Cap Regular Growth Plan,INF247L01528,129047,Motilal Oswal Flexi Cap Regular Growth Plan,,91012748842,buy,    2021-12-06,1999.9,59.58,33.5668
+Mirae Asset Large & Midcap Growth Direct Plan,INF769K01BI1,118834,Mirae Asset Large & Midcap Growth Direct Plan,,7993233136,buy,    2021-12-06,4999.75,47.29,105.726
+Mirae Asset Large Cap Regular Growth Plan,INF769K01010,107578,Mirae Asset Large Cap Regular Growth Plan,,7993233136,buy,    2021-12-06,1499.93,19.619,76.452
+Mirae Asset Large Cap Regular Growth Plan,INF769K01010,107578,Mirae Asset Large Cap Regular Growth Plan,,79911180851,buy,    2021-12-06,1999.9,26.159,76.452
+UTI Flexi Cap Growth Direct Plan,INF789F01TA8,120663,UTI Flexi Cap Growth Direct Plan,,5.99305E+11,buy,    2021-12-06,4999.75,18.235,274.1815
+HDFC BSE Sensex Index Regular Growth Plan,INF179K01LA9,101281,HDFC BSE Sensex Index Regular Growth Plan,,10372451/53,buy,    2021-12-06,1999.9,3.927,509.2638
+HDFC Mid Cap Growth Plan,INF179K01CR2,105758,HDFC Mid Cap Growth Plan,,10372451/53,buy,    2021-12-06,999.95,11.171,89.517
+HDFC Hybrid Equity Regular Growth Plan,INF179K01AS4,102948,HDFC Hybrid Equity Regular Growth Plan,,10825996/37,buy,    2021-12-06,1999.9,25.83,77.425
+HDFC Hybrid Debt Growth Plan,INF179K01AE4,102147,HDFC Hybrid Debt Growth Plan,,10853606/45,buy,    2021-12-06,999.95,16.928,59.0699
+Kotak Flexicap Growth Plan,INF174K01336,112090,Kotak Flexicap Growth Plan,,3900867/61,buy,    2021-12-06,999.95,19.743,50.649
+Kotak Flexicap Growth Plan,INF174K01336,112090,Kotak Flexicap Growth Plan,,3900867/61,buy,    2021-12-06,1999.9,39.485,50.649
+SBI Large Cap Growth Plan,INF200K01164,103616,SBI Large Cap Growth Plan,,14956452,buy,    2021-12-06,999.95,16.808,59.4911
+SBI Midcap Growth Plan,INF200K01560,102941,SBI Midcap Growth Plan,,14956452,buy,    2021-12-06,999.95,7.268,137.5803
+ICICI Prudential Large Cap Growth Plan,INF109K01BL4,108466,ICICI Prudential Large Cap Growth Plan,,7976487/51,buy,    2021-12-06,999.95,15.785,63.35
+ICICI Prudential Large Cap Growth Plan,INF109K01BL4,108466,ICICI Prudential Large Cap Growth Plan,,7976487/51,buy,    2021-12-06,1499.93,23.677,63.35
+Axis Large Cap Growth Direct Plan,INF846K01DN3,120466,Axis Large Cap Growth Direct Plan,,91062128393,buy,    2021-12-02,4999.75,97.862,51.09
+Franklin India Income Opportunities Growth Plan,INF090I01445,112304,Franklin India Income Opportunities Growth Plan,,19773349,sell,    2021-11-18,36.8,1.481,24.847
+Franklin India Ultra Short Bond Super Institutional Growth Plan,INF090I01CG8,107248,Franklin India Ultra Short Bond Super Institutional Growth Plan,,19773349,sell,    2021-11-18,8.64,0.271,31.8767
+HDFC Corporate Bond Growth Direct Plan,INF179K01XD8,118987,HDFC Corporate Bond Growth Direct Plan,,11104373/76,buy,    2021-11-10,9999.5,382.67,26.1309
+ICICI Prudential Large Cap Growth Direct Plan,INF109K016L0,120586,ICICI Prudential Large Cap Growth Direct Plan,,8841618/87,buy,    2021-11-09,4999.75,68.782,72.69
+Motilal Oswal Flexi Cap Regular Growth Plan,INF247L01528,129047,Motilal Oswal Flexi Cap Regular Growth Plan,,91012748842,buy,    2021-11-08,1999.9,55.614,35.9601
+HDFC Hybrid Equity Regular Growth Plan,INF179K01AS4,102948,HDFC Hybrid Equity Regular Growth Plan,,10825996/37,buy,    2021-11-08,1999.9,24.628,81.205

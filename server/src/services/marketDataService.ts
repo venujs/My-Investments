@@ -2,11 +2,24 @@ import { getDb } from '../db/connection.js';
 import { today } from '../utils/date.js';
 import { toPaise } from '../utils/inr.js';
 
+// Wrapper around fetch() that aborts after timeoutMs milliseconds.
+// Node.js fetch() has no built-in timeout; without this a hung API response
+// (e.g. mfapi.in throttling silently) blocks the event loop forever.
+async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Resolve ISIN or legacy AMFI code to a numeric scheme code for mfapi.in
 async function resolveSchemeCode(isinCode: string): Promise<string | null> {
   if (/^\d+$/.test(isinCode)) return isinCode; // already a numeric AMFI code
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(isinCode)}`);
+    const res = await fetchWithTimeout(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(isinCode)}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.length > 0) return String(data[0].schemeCode);
@@ -19,7 +32,7 @@ export async function fetchMFNav(isinCode: string): Promise<{ date: string; nav:
   try {
     const schemeCode = await resolveSchemeCode(isinCode);
     if (!schemeCode) return null;
-    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}/latest`);
+    const res = await fetchWithTimeout(`https://api.mfapi.in/mf/${schemeCode}/latest`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.data && data.data.length > 0) {
@@ -40,7 +53,7 @@ export async function fetchMFNav(isinCode: string): Promise<{ date: string; nav:
 // Fetch ISIN and details for a scheme code (for UI auto-fill)
 export async function fetchSchemeDetails(schemeCode: string): Promise<{ isin: string; isin_reinvestment: string | null; scheme_name: string | null } | null> {
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`);
+    const res = await fetchWithTimeout(`https://api.mfapi.in/mf/${schemeCode}`);
     if (!res.ok) return null;
     const data = await res.json();
     return {
@@ -56,7 +69,7 @@ export async function fetchSchemeDetails(schemeCode: string): Promise<{ isin: st
 // Search MF schemes from mfapi.in
 export async function searchMFSchemes(query: string): Promise<{ schemeCode: string; schemeName: string }[]> {
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`);
+    const res = await fetchWithTimeout(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) return [];
     const data = await res.json();
     return (data || []).slice(0, 20).map((item: any) => ({
@@ -73,7 +86,7 @@ export async function searchMFSchemes(query: string): Promise<{ schemeCode: stri
 export async function fetchStockPrice(ticker: string, exchange: string): Promise<{ date: string; price: number } | null> {
   try {
     const symbol = exchange === 'BSE' ? `${ticker}.BO` : `${ticker}.NS`;
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`);
+    const res = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`);
     if (!res.ok) return null;
     const data = await res.json();
     const result = data.chart?.result?.[0];
@@ -90,7 +103,7 @@ export async function fetchStockPrice(ticker: string, exchange: string): Promise
 // Fetch gold price (from Yahoo Finance - XAUUSD)
 export async function fetchGoldPrice(): Promise<{ date: string; pricePerGramPaise: number } | null> {
   try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=1d`);
+    const res = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=1d`);
     if (!res.ok) return null;
     const data = await res.json();
     const result = data.chart?.result?.[0];
@@ -178,7 +191,7 @@ export function getCachedPrice(symbol: string, source: string): { date: string; 
 export async function fetchStockHistory(ticker: string, exchange: string): Promise<{ date: string; price_paise: number }[]> {
   try {
     const symbol = exchange === 'BSE' ? `${ticker}.BO` : `${ticker}.NS`;
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1y`);
+    const res = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1y`);
     if (!res.ok) return [];
     const data = await res.json();
     const result = data.chart?.result?.[0];
@@ -261,11 +274,22 @@ export async function fetchMFNavHistory(isinCode: string): Promise<{ date: strin
 
 // Get MF NAV for a specific date (cache first, then API fallback)
 export async function fetchMFNavForDate(isinCode: string, targetDate: string): Promise<{ date: string; pricePaise: number } | null> {
+  const db = getDb();
+
   // Check cache first
   const cached = getCachedPriceForDate(isinCode, 'mfapi', targetDate);
   if (cached) return { date: cached.date, pricePaise: cached.price_paise };
 
-  // Fetch full history and cache
+  // If we already have ANY data for this fund, don't re-download.
+  // The targetDate is simply before the earliest available entry — return earliest.
+  const hasAny = db.prepare(
+    `SELECT date, price_paise FROM market_prices WHERE symbol = ? AND source = 'mfapi' ORDER BY date ASC LIMIT 1`
+  ).get(isinCode) as { date: string; price_paise: number } | undefined;
+  if (hasAny) {
+    return { date: hasAny.date, pricePaise: hasAny.price_paise };
+  }
+
+  // No data at all — fetch full history and cache
   const history = await fetchMFNavHistory(isinCode);
   if (history.length === 0) {
     // Fallback to latest
@@ -290,14 +314,24 @@ export async function fetchMFNavForDate(isinCode: string, targetDate: string): P
 
 // Get stock price for a specific date (cache first, then API fallback)
 export async function fetchStockPriceForDate(ticker: string, exchange: string, targetDate: string): Promise<{ date: string; pricePaise: number } | null> {
+  const db = getDb();
+
   // Check cache first
   const cached = getCachedPriceForDate(ticker, ['yahoo', 'manual'], targetDate);
   if (cached) return { date: cached.date, pricePaise: cached.price_paise };
 
-  // Fetch 1yr history and batch-insert all in a single transaction
+  // If we already have ANY data for this ticker, don't re-download.
+  // Yahoo Finance only provides 1yr history, so dates older than that won't appear — return earliest.
+  const hasAny = db.prepare(
+    `SELECT date, price_paise FROM market_prices WHERE symbol = ? AND source = 'yahoo' ORDER BY date ASC LIMIT 1`
+  ).get(ticker) as { date: string; price_paise: number } | undefined;
+  if (hasAny) {
+    return { date: hasAny.date, pricePaise: hasAny.price_paise };
+  }
+
+  // No data at all — fetch 1yr history and batch-insert in a single transaction
   const history = await fetchStockHistory(ticker, exchange);
   if (history.length > 0) {
-    const db = getDb();
     const insertStmt = db.prepare(
       `INSERT OR REPLACE INTO market_prices (symbol, source, date, price_paise) VALUES (?, ?, ?, ?)`
     );

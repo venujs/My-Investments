@@ -28,6 +28,14 @@ router.get('/net-worth', (req, res) => {
 
 router.post('/generate-historical', (req, res) => {
   const userId = req.session.userId!;
+
+  // Prevent concurrent runs for the same user
+  const current = jobStatus.get(userId);
+  if (current?.status === 'running') {
+    res.status(409).json({ error: 'already_running', message: 'A snapshot generation job is already in progress.' });
+    return;
+  }
+
   const startedAt = new Date().toISOString();
   jobStatus.set(userId, { status: 'running', startedAt });
   res.json({ started: true });

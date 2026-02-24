@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InvestmentSummaryCard } from '@/components/shared/InvestmentSummaryCard';
 import { useTypeXIRR } from '@/hooks/useAnalytics';
-import { RotateCcw, Plus, Trash2, ChevronDown, ChevronUp, Search, CheckSquare } from 'lucide-react';
+import { RotateCcw, Plus, Trash2, ChevronDown, ChevronUp, Search, CheckSquare, EyeOff, Eye } from 'lucide-react';
 import { toPaise, formatINR } from '@/lib/inr';
 import { toast } from 'sonner';
 import type { Investment } from 'shared';
@@ -33,6 +33,7 @@ export function RDPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [hideMatured, setHideMatured] = useState(false);
 
   const toggleSelect = (id: number) => {
     const next = new Set(selectedIds);
@@ -48,10 +49,17 @@ export function RDPage() {
     setSelectedIds(new Set()); setSelectMode(false); setShowBulkDeleteConfirm(false);
   };
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const maturedCount = investments.filter(inv => {
+    const d = inv.detail || {};
+    return d.maturity_date && d.maturity_date <= todayStr;
+  }).length;
+
   const filtered = investments.filter(inv => {
+    const d = inv.detail || {};
+    if (hideMatured && d.maturity_date && d.maturity_date <= todayStr) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    const d = inv.detail || {};
     return inv.name.toLowerCase().includes(q)
       || (d.bank_name || '').toLowerCase().includes(q);
   });
@@ -113,6 +121,12 @@ export function RDPage() {
                 <Trash2 className="mr-2 h-4 w-4" /> Clear All
               </Button>
             </>
+          )}
+          {maturedCount > 0 && (
+            <Button variant="outline" size="sm" onClick={() => setHideMatured(!hideMatured)}>
+              {hideMatured ? <Eye className="mr-2 h-4 w-4" /> : <EyeOff className="mr-2 h-4 w-4" />}
+              {hideMatured ? `Show Matured (${maturedCount})` : `Hide Matured (${maturedCount})`}
+            </Button>
           )}
           <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" /> Add RD</Button>
         </div>
@@ -195,13 +209,25 @@ export function RDPage() {
 function RDCard({ investment, expanded, onToggle, onDelete }: { investment: Investment; expanded: boolean; onToggle: () => void; onDelete: () => void }) {
   const d = investment.detail || {};
   const { data: txns = [] } = useInvestmentTransactions(expanded ? investment.id : 0);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isMatured = d.maturity_date && d.maturity_date <= todayStr;
+  const daysToMaturity = d.maturity_date
+    ? Math.round((new Date(d.maturity_date).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
 
   return (
-    <Card>
+    <Card className={isMatured ? 'opacity-75' : ''}>
       <CardHeader className="cursor-pointer" onClick={onToggle}>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-base">{investment.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">{investment.name}</CardTitle>
+              {isMatured
+                ? <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">Matured</Badge>
+                : daysToMaturity !== null && daysToMaturity <= 90
+                  ? <Badge variant="outline" className="text-xs text-blue-600 border-blue-400">Matures in {daysToMaturity}d</Badge>
+                  : null}
+            </div>
             <p className="text-sm text-muted-foreground">{d.bank_name} - {formatINR(d.monthly_installment_paise || 0)}/month on {d.start_date ? (() => { const day = new Date(d.start_date + 'T00:00:00').getDate(); return isNaN(day) ? '?' : day; })() : '-'}th @ {d.interest_rate}%</p>
           </div>
           <div className="flex items-center gap-4">
@@ -219,7 +245,7 @@ function RDCard({ investment, expanded, onToggle, onDelete }: { investment: Inve
             <div><span className="text-muted-foreground">Installment:</span> <InrAmount paise={d.monthly_installment_paise || 0} /></div>
             <div><span className="text-muted-foreground">Rate:</span> {d.interest_rate}%</div>
             <div><span className="text-muted-foreground">Start:</span> {d.start_date}</div>
-            <div><span className="text-muted-foreground">Maturity Date:</span> {d.maturity_date}</div>
+            <div><span className="text-muted-foreground">Maturity Date:</span> {d.maturity_date} {isMatured && <span className="text-amber-600 text-xs">(matured)</span>}</div>
             {d.maturity_value_paise && <div><span className="text-muted-foreground">Maturity Value:</span> <InrAmount paise={d.maturity_value_paise} /></div>}
             <div><span className="text-muted-foreground">Current Value:</span> <InrAmount paise={investment.current_value_paise || 0} /></div>
           </div>

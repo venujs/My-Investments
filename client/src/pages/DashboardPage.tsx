@@ -104,11 +104,14 @@ export function DashboardPage() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => {
             generateHistorical.mutate(undefined, {
-              onSuccess: () => toast.success('Historical snapshot generation started in background'),
+              onSuccess: () => {
+                toast.success('Historical snapshot generation started in background');
+                qc.invalidateQueries({ queryKey: ['snapshots', 'job-status'] });
+              },
               onError: () => toast.error('Failed to generate historical snapshots'),
             });
-          }} disabled={generateHistorical.isPending}>
-            <History className={`mr-2 h-4 w-4 ${generateHistorical.isPending ? 'animate-spin' : ''}`} />
+          }} disabled={generateHistorical.isPending || jobStatus?.status === 'running'}>
+            <History className={`mr-2 h-4 w-4 ${(generateHistorical.isPending || jobStatus?.status === 'running') ? 'animate-spin' : ''}`} />
             Generate Historical
           </Button>
           <Button size="sm" variant="outline" onClick={handleClearSnapshots} disabled={clearSnapshots.isPending}>

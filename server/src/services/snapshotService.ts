@@ -173,7 +173,38 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
     `SELECT value_paise FROM investment_overrides WHERE investment_id = ? AND override_date <= ? ORDER BY override_date DESC LIMIT 1`
   ).get(investment.id, targetDate) as { value_paise: number } | undefined;
 
-  const invested = transactionService.getTotalInvestedAsOf(investment.id, targetDate);
+  let invested = transactionService.getTotalInvestedAsOf(investment.id, targetDate);
+
+  // Fallback: for instruments with no transaction records, derive invested from detail fields
+  if (invested === 0 && detail) {
+    switch (investment.investment_type) {
+      case 'fd':
+        invested = detail.principal_paise || 0;
+        break;
+      case 'rd': {
+        const rdEnd = new Date(targetDate);
+        const rdStart = new Date(detail.start_date);
+        if (rdEnd >= rdStart) {
+          let monthsPaid = 0;
+          const d = new Date(rdStart);
+          while (d <= rdEnd) { monthsPaid++; d.setMonth(d.getMonth() + 1); }
+          invested = (detail.monthly_installment_paise || 0) * monthsPaid;
+        }
+        break;
+      }
+      case 'fixed_asset':
+        invested = detail.purchase_price_paise || 0;
+        break;
+      case 'gold':
+        if (detail.weight_grams && detail.purchase_price_per_gram_paise) {
+          invested = Math.round(detail.weight_grams * detail.purchase_price_per_gram_paise);
+        }
+        break;
+      case 'loan':
+        invested = detail.principal_paise || 0;
+        break;
+    }
+  }
 
   if (override) {
     return { invested, value: override.value_paise };
@@ -181,12 +212,22 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
 
   let value = 0;
   switch (investment.investment_type) {
-    case 'fd':
-      value = calc.calculateFDValue(detail.principal_paise, detail.interest_rate, detail.compounding, detail.start_date, targetDate);
+    case 'fd': {
+      // Cap at maturity date — value stops growing once the FD matures
+      const fdEffectiveDate = detail.maturity_date && detail.maturity_date < targetDate
+        ? detail.maturity_date
+        : targetDate;
+      value = calc.calculateFDValue(detail.principal_paise, detail.interest_rate, detail.compounding, detail.start_date, fdEffectiveDate);
       break;
-    case 'rd':
-      value = calc.calculateRDValue(detail.monthly_installment_paise, detail.interest_rate, detail.compounding, detail.start_date, targetDate);
+    }
+    case 'rd': {
+      // Cap at maturity date — value stops growing once the RD matures
+      const rdEffectiveDate = detail.maturity_date && detail.maturity_date < targetDate
+        ? detail.maturity_date
+        : targetDate;
+      value = calc.calculateRDValue(detail.monthly_installment_paise, detail.interest_rate, detail.compounding, detail.start_date, rdEffectiveDate);
       break;
+    }
     case 'mf_equity':
     case 'mf_hybrid':
     case 'mf_debt': {
@@ -210,14 +251,42 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
       break;
     }
     case 'gold': {
-      if (detail.weight_grams && detail.purchase_price_per_gram_paise) {
+      if (!detail.weight_grams) break;
+      const purity = detail.purity || '24K';
+
+      // 1. Use actual gold price from gold_prices table at or before targetDate (most accurate)
+      const historicalGoldRow = db.prepare(
+        `SELECT price_per_gram_paise, date FROM gold_prices WHERE date <= ? ORDER BY date DESC LIMIT 1`
+      ).get(targetDate) as { price_per_gram_paise: number; date: string } | undefined;
+
+      if (historicalGoldRow) {
+        value = calc.calculateGoldValue(detail.weight_grams, purity, historicalGoldRow.price_per_gram_paise);
+      } else {
+        // Ensure goldRate is always a valid positive number — parseFloat can return NaN for
+        // invalid settings values, and NaN propagates through all arithmetic producing NaN
+        // for value, which then corrupts totalValue via totalValue += NaN.
         const rateRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('rate_gold') as { value: string } | undefined;
-        const goldRate = rateRow ? parseFloat(rateRow.value) : 8;
-        const purchaseDate = detail.purchase_date || targetDate;
-        const yearsElapsed = Math.max(0, (new Date(targetDate).getTime() - new Date(purchaseDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
-        const purityFactor = detail.purity === '24K' ? 1.0 : detail.purity === '22K' ? 22 / 24 : 18 / 24;
-        const purchaseTotal = Math.round(detail.weight_grams * detail.purchase_price_per_gram_paise * purityFactor);
-        value = Math.round(purchaseTotal * Math.pow(1 + goldRate / 100, yearsElapsed));
+        const goldRateParsed = rateRow ? parseFloat(rateRow.value) : NaN;
+        const goldRate = (isNaN(goldRateParsed) || goldRateParsed <= 0) ? 8 : goldRateParsed;
+
+        // 2. Back-extrapolate from the most recent gold price we have (preferred: anchored to real market)
+        const latestGoldRow = db.prepare(
+          `SELECT price_per_gram_paise, date FROM gold_prices ORDER BY date DESC LIMIT 1`
+        ).get() as { price_per_gram_paise: number; date: string } | undefined;
+
+        if (latestGoldRow) {
+          const yearsBack = Math.max(0, (new Date(latestGoldRow.date).getTime() - new Date(targetDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+          const estimatedPrice = Math.round(latestGoldRow.price_per_gram_paise / Math.pow(1 + goldRate / 100, yearsBack));
+          value = calc.calculateGoldValue(detail.weight_grams, purity, Math.max(1, estimatedPrice));
+        } else if (detail.purchase_price_per_gram_paise > 0) {
+          // 3. Appreciate from purchase price using the gold appreciation rate setting
+          const purchaseDate = detail.purchase_date || targetDate;
+          const yearsElapsed = Math.max(0, (new Date(targetDate).getTime() - new Date(purchaseDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+          const purityFactor = purity === '24K' ? 1.0 : purity === '22K' ? 22 / 24 : 18 / 24;
+          const purchaseTotal = Math.round(detail.weight_grams * detail.purchase_price_per_gram_paise * purityFactor);
+          value = Math.round(purchaseTotal * Math.pow(1 + goldRate / 100, yearsElapsed));
+        }
+        // If no gold price data at all: value stays 0 (user must fetch prices or enter purchase price)
       }
       break;
     }
@@ -243,7 +312,8 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
       value = invested;
   }
 
-  return { invested: Math.max(0, invested), value: Math.max(0, value) };
+  // Guard against NaN: Math.max(0, NaN) = NaN, but NaN || 0 = 0
+  return { invested: Math.max(0, invested || 0), value: Math.max(0, value || 0) };
 }
 
 // Build historical cashflows for XIRR calculation up to a given target date
@@ -374,26 +444,25 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
       return startDate <= targetDate;
     });
 
-    let totalInvested = 0;
-    let totalValue = 0;
-    let totalDebt = 0;
     const breakdown: Record<string, { invested: number; value: number; count: number; gain: number; gain_percent: number; xirr: number | null }> = {};
 
     for (const inv of activeInvestments) {
-      const { invested, value } = await calculateHistoricalValue(inv, targetDate);
+      let invested = 0;
+      let value = 0;
+      try {
+        ({ invested, value } = await calculateHistoricalValue(inv, targetDate));
+      } catch (err) {
+        console.error(`calculateHistoricalValue failed for investment ${inv.id} (${inv.name}) at ${targetDate}:`, err);
+        // Skip this investment rather than corrupting the totals
+        await new Promise<void>(resolve => setImmediate(resolve));
+        continue;
+      }
 
       // Store individual investment snapshot
       db.prepare(
         `INSERT OR REPLACE INTO monthly_snapshots (investment_id, year_month, invested_paise, current_value_paise, gain_paise)
          VALUES (?, ?, ?, ?, ?)`
       ).run(inv.id, ym, invested, value, value - invested);
-
-      if (inv.investment_type === 'loan') {
-        totalDebt += value;
-      } else {
-        totalInvested += invested;
-        totalValue += value;
-      }
 
       if (!breakdown[inv.investment_type]) {
         breakdown[inv.investment_type] = { invested: 0, value: 0, count: 0, gain: 0, gain_percent: 0, xirr: null };
@@ -404,6 +473,21 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
 
       // Yield after every investment so HTTP requests can be served
       await new Promise<void>(resolve => setImmediate(resolve));
+    }
+
+    // Recompute totals from breakdown — more reliable than accumulating in the loop
+    // because if any investment returned NaN (stored as 0 in the breakdown object),
+    // that NaN would have corrupted a running totalValue via += NaN.
+    let totalInvested = 0;
+    let totalValue = 0;
+    let totalDebt = 0;
+    for (const [type, bkd] of Object.entries(breakdown)) {
+      if (type === 'loan') {
+        totalDebt += bkd.value || 0;
+      } else {
+        totalInvested += bkd.invested || 0;
+        totalValue += bkd.value || 0;
+      }
     }
 
     // Compute gain, gain_percent, and XIRR per investment type
