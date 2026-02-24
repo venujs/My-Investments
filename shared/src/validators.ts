@@ -25,7 +25,7 @@ export const changePinSchema = z.object({
 });
 
 // Investment types
-const investmentTypes = ['fd', 'rd', 'mf_equity', 'mf_hybrid', 'mf_debt', 'shares', 'gold', 'loan', 'fixed_asset', 'pension', 'savings_account'] as const;
+const investmentTypes = ['fd', 'rd', 'mf_equity', 'mf_hybrid', 'mf_debt', 'shares', 'gold', 'loan', 'fixed_asset', 'pension', 'savings_account', 'expense'] as const;
 const txnTypes = ['buy', 'sell', 'deposit', 'withdrawal', 'dividend', 'interest', 'sip', 'emi', 'premium', 'bonus', 'split', 'maturity'] as const;
 const compoundingTypes = ['monthly', 'quarterly', 'half_yearly', 'yearly'] as const;
 const goldForms = ['physical', 'digital', 'sovereign_bond'] as const;
@@ -59,6 +59,7 @@ export const fdDetailSchema = z.object({
   bank_name: z.string().max(200).nullable().optional(),
   branch: z.string().max(200).nullable().optional(),
   fd_number: z.string().max(100).nullable().optional(),
+  is_closed_early: z.number().int().optional(),
 });
 
 export const rdDetailSchema = z.object({
@@ -69,6 +70,7 @@ export const rdDetailSchema = z.object({
   maturity_date: z.string().regex(dateRegex),
   bank_name: z.string().max(200).nullable().optional(),
   branch: z.string().max(200).nullable().optional(),
+  is_closed_early: z.number().int().optional(),
 });
 
 export const mfDetailSchema = z.object({
@@ -124,6 +126,12 @@ export const savingsAccountDetailSchema = z.object({
   ifsc: z.string().max(20).nullable().optional(),
 });
 
+export const expenseDetailSchema = z.object({
+  start_date: z.string().regex(dateRegex),
+  expense_date: z.string().regex(dateRegex),
+  amount_paise: z.number().int().positive(),
+});
+
 // Combined create schema (base + detail)
 export const createInvestmentWithDetailSchema = z.object({
   investment: createInvestmentSchema,
@@ -175,6 +183,7 @@ export const goalSchema = z.object({
   name: z.string().min(1).max(200),
   target_amount_paise: z.number().int().positive(),
   target_date: z.string().regex(dateRegex),
+  start_date: z.string().regex(dateRegex).nullable().optional(),
   priority: z.number().int().min(1).max(10).optional().default(5),
   notes: z.string().max(1000).nullable().optional(),
   is_active: z.boolean().optional().default(true),

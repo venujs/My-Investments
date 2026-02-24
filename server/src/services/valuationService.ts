@@ -15,14 +15,20 @@ export function getCurrentValue(investment: Investment): number {
 
   switch (investment.investment_type) {
     case 'fd': {
-      const fdValue = calc.calculateFDValue(detail.principal_paise, detail.interest_rate, detail.compounding, detail.start_date);
+      const todayStr = today();
+      const effectiveDate = detail.maturity_date && detail.maturity_date < todayStr
+        ? detail.maturity_date : todayStr;
+      const fdValue = calc.calculateFDValue(detail.principal_paise, detail.interest_rate, detail.compounding, detail.start_date, effectiveDate);
       // Attach maturity value to detail for display
       detail.maturity_value_paise = calc.calculateFDMaturityValue(detail.principal_paise, detail.interest_rate, detail.compounding, detail.start_date, detail.maturity_date);
       return fdValue;
     }
 
     case 'rd': {
-      const rdValue = calc.calculateRDValue(detail.monthly_installment_paise, detail.interest_rate, detail.compounding, detail.start_date);
+      const todayStr = today();
+      const effectiveDate = detail.maturity_date && detail.maturity_date < todayStr
+        ? detail.maturity_date : todayStr;
+      const rdValue = calc.calculateRDValue(detail.monthly_installment_paise, detail.interest_rate, detail.compounding, detail.start_date, effectiveDate);
       // Attach maturity value to detail for display
       detail.maturity_value_paise = calc.calculateRDValue(detail.monthly_installment_paise, detail.interest_rate, detail.compounding, detail.start_date, detail.maturity_date);
       return rdValue;
@@ -67,6 +73,15 @@ export function getCurrentValue(investment: Investment): number {
     case 'savings_account':
       return transactionService.getTotalInvested(investment.id);
 
+    case 'expense': {
+      const todayStr = today();
+      if (detail.start_date && detail.expense_date &&
+          detail.start_date <= todayStr && todayStr <= detail.expense_date) {
+        return detail.amount_paise || 0;
+      }
+      return 0;
+    }
+
     default:
       return 0;
   }
@@ -85,8 +100,12 @@ export function enrichInvestment(investment: Investment): Investment {
         break;
       case 'rd': {
         // Count installments by calendar months (same logic as calculateRDValue)
+        // Cap at maturity_date if already matured/closed
         const rdStart = new Date(detail.start_date);
-        const rdNow = new Date();
+        const todayStr = today();
+        const endStr = detail.maturity_date && detail.maturity_date < todayStr
+          ? detail.maturity_date : todayStr;
+        const rdNow = new Date(endStr);
         let monthsPaid = 0;
         const rdD = new Date(rdStart);
         while (rdD <= rdNow) { monthsPaid++; rdD.setMonth(rdD.getMonth() + 1); }
@@ -101,6 +120,9 @@ export function enrichInvestment(investment: Investment): Investment {
         break;
       case 'gold':
         invested = Math.round((detail.weight_grams || 0) * (detail.purchase_price_per_gram_paise || 0));
+        break;
+      case 'expense':
+        invested = detail.amount_paise || 0;
         break;
     }
   }
@@ -123,7 +145,7 @@ export function enrichInvestment(investment: Investment): Investment {
     investment.detail.total_units = transactionService.getTotalUnits(investment.id);
   }
 
-  if (investment.investment_type === 'loan') {
+  if (investment.investment_type === 'loan' || investment.investment_type === 'expense') {
     investment.gain_paise = 0;
     investment.gain_percent = 0;
   } else {
@@ -132,7 +154,7 @@ export function enrichInvestment(investment: Investment): Investment {
   }
 
   // Calculate XIRR
-  if (currentValue > 0 && investment.investment_type !== 'loan') {
+  if (currentValue > 0 && investment.investment_type !== 'loan' && investment.investment_type !== 'expense') {
     const txns = transactionService.getTransactions(investment.id);
     let cashflows: { date: string; amount: number }[];
 
@@ -160,7 +182,20 @@ export function enrichInvestment(investment: Investment): Investment {
 }
 
 export function calculateTypeXIRR(investmentType: string, userId?: number): number | null {
-  const investments = investmentService.getInvestmentsByType(investmentType, userId);
+  const todayStr = today();
+  let investments = investmentService.getInvestmentsByType(investmentType, userId);
+
+  // For FD/RD, exclude matured and closed-early investments from the aggregate XIRR
+  if (investmentType === 'fd' || investmentType === 'rd') {
+    investments = investments.filter(inv => {
+      const d = inv.detail;
+      if (!d) return true;
+      if (d.is_closed_early) return false;
+      if (d.maturity_date && d.maturity_date <= todayStr) return false;
+      return true;
+    });
+  }
+
   const allCashflows: { date: string; amount: number }[] = [];
 
   for (const inv of investments) {
@@ -207,7 +242,10 @@ function buildSyntheticCashflows(investment: Investment): { date: string; amount
     case 'rd':
       if (detail.monthly_installment_paise && detail.start_date) {
         const start = new Date(detail.start_date);
-        const now = new Date(today());
+        const todayStr = today();
+        const endStr = detail.maturity_date && detail.maturity_date < todayStr
+          ? detail.maturity_date : todayStr;
+        const now = new Date(endStr);
         const d = new Date(start);
         while (d <= now) {
           cashflows.push({ date: d.toISOString().split('T')[0], amount: -detail.monthly_installment_paise });

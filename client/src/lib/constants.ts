@@ -10,6 +10,7 @@ export const INVESTMENT_TYPE_LABELS: Record<string, string> = {
   fixed_asset: 'Fixed Asset',
   pension: 'Pension',
   savings_account: 'Savings A/c',
+  expense: 'Expected Expense',
 };
 
 export const FREQUENCY_LABELS: Record<string, string> = {

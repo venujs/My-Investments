@@ -13,6 +13,7 @@ const DETAIL_TABLES: Record<string, string> = {
   fixed_asset: 'investment_fixed_asset',
   pension: 'investment_pension',
   savings_account: 'investment_savings_account',
+  expense: 'investment_expense',
 };
 
 function getDetailTable(investmentType: string): string {

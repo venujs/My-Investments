@@ -45,6 +45,7 @@ export interface FDDetail {
   bank_name: string | null;
   branch: string | null;
   fd_number: string | null;
+  is_closed_early?: number;
 }
 
 export interface RDDetail {
@@ -56,6 +57,7 @@ export interface RDDetail {
   maturity_date: string;
   bank_name: string | null;
   branch: string | null;
+  is_closed_early?: number;
 }
 
 export interface MFDetail {
@@ -117,6 +119,13 @@ export interface SavingsAccountDetail {
   account_number: string | null;
   interest_rate: number;
   ifsc: string | null;
+}
+
+export interface ExpenseDetail {
+  investment_id: number;
+  start_date: string;
+  expense_date: string;
+  amount_paise: number;
 }
 
 // Investment Transaction
@@ -211,6 +220,7 @@ export interface Goal {
   name: string;
   target_amount_paise: number;
   target_date: string;
+  start_date?: string | null;
   priority: number;
   notes: string | null;
   is_active: boolean;

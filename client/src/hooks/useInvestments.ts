@@ -60,3 +60,21 @@ export function useDeleteInvestment() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['investments'] }); },
   });
 }
+
+export function useCloseEarlyInvestment(type: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: { closure_date: string; interest_rate: number } }) =>
+      investmentsApi.closeEarly(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['investments', 'type', type] }),
+  });
+}
+
+export function useSetBalance(type: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: { balance_paise: number; date?: string } }) =>
+      investmentsApi.setBalance(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['investments', 'type', type] }),
+  });
+}

@@ -6,6 +6,7 @@ import * as investmentService from '../services/investmentService.js';
 import * as valuationService from '../services/valuationService.js';
 import * as transactionService from '../services/transactionService.js';
 import * as recurringService from '../services/recurringService.js';
+import { getDb } from '../db/connection.js';
 import { today } from '../utils/date.js';
 
 const router = Router();
@@ -81,6 +82,66 @@ router.post('/', validate(createInvestmentWithDetailSchema), async (req, res) =>
   }
 
   res.status(201).json(valuationService.enrichInvestment(created));
+});
+
+// Set balance for savings_account and pension (auto-creates deposit/withdrawal to reconcile)
+router.post('/:id/set-balance', (req, res) => {
+  const { balance_paise, date } = req.body as { balance_paise: number; date?: string };
+  if (typeof balance_paise !== 'number' || balance_paise < 0) {
+    res.status(400).json({ error: 'balance_paise required and must be >= 0' }); return;
+  }
+  const id = Number(req.params.id);
+  const inv = investmentService.getInvestmentById(id);
+  if (!inv || !['savings_account', 'pension'].includes(inv.investment_type)) {
+    res.status(404).json({ error: 'Not found' }); return;
+  }
+  const currentBalance = valuationService.enrichInvestment(inv).current_value_paise || 0;
+  const delta = balance_paise - currentBalance;
+  if (Math.abs(delta) >= 1) {
+    transactionService.createTransaction(id, req.session.userId!, {
+      txn_type: delta > 0 ? 'deposit' : 'withdrawal',
+      date: date || today(),
+      amount_paise: Math.abs(Math.round(delta)),
+      notes: 'Balance adjustment',
+    });
+  }
+  const updated = investmentService.getInvestmentById(id)!;
+  res.json(valuationService.enrichInvestment(updated));
+});
+
+// Close FD/RD early (sets closure date as maturity_date with reduced rate)
+router.post('/:id/close-early', (req, res) => {
+  const { closure_date, interest_rate } = req.body as { closure_date: string; interest_rate: number };
+  if (!closure_date || typeof interest_rate !== 'number') {
+    res.status(400).json({ error: 'closure_date and interest_rate are required' }); return;
+  }
+  const id = Number(req.params.id);
+  const db = getDb();
+
+  const inv = db.prepare(
+    'SELECT investment_type FROM investments WHERE id = ? AND user_id = ?'
+  ).get(id, req.session.userId!) as { investment_type: string } | undefined;
+
+  if (!inv || (inv.investment_type !== 'fd' && inv.investment_type !== 'rd')) {
+    res.status(404).json({ error: 'FD or RD not found' }); return;
+  }
+
+  const updated = investmentService.updateInvestment(id, {}, {
+    maturity_date: closure_date,
+    interest_rate,
+    is_closed_early: 1,
+  });
+  if (!updated) { res.status(404).json({ error: 'Not found' }); return; }
+
+  // For RD: deactivate the recurring deposit rule
+  if (inv.investment_type === 'rd') {
+    const rule = db.prepare(
+      'SELECT id FROM recurring_rules WHERE investment_id = ? AND is_active = 1 LIMIT 1'
+    ).get(id) as { id: number } | undefined;
+    if (rule) recurringService.updateRule(rule.id, { end_date: closure_date, is_active: false });
+  }
+
+  res.json(valuationService.enrichInvestment(updated));
 });
 
 // Update investment

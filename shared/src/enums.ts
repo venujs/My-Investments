@@ -10,6 +10,7 @@ export const InvestmentType = {
   FIXED_ASSET: 'fixed_asset',
   PENSION: 'pension',
   SAVINGS_ACCOUNT: 'savings_account',
+  EXPENSE: 'expense',
 } as const;
 export type InvestmentType = (typeof InvestmentType)[keyof typeof InvestmentType];
 
@@ -25,6 +26,7 @@ export const InvestmentTypeLabels: Record<InvestmentType, string> = {
   fixed_asset: 'Fixed Asset',
   pension: 'Pension',
   savings_account: 'Savings Account',
+  expense: 'Expected Expense',
 };
 
 export const InvestmentTxnType = {

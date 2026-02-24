@@ -154,6 +154,10 @@ export async function initializeDbAsync(): Promise<void> {
     } catch { /* ignore if migration fails */ }
   }
 
+  // Migration: add is_closed_early column to investment_fd and investment_rd
+  try { db.exec('ALTER TABLE investment_fd ADD COLUMN is_closed_early INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE investment_rd ADD COLUMN is_closed_early INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+
   // Migration: add purchase_date column to investment_gold
   try {
     db.exec(`ALTER TABLE investment_gold ADD COLUMN purchase_date TEXT`);
@@ -178,6 +182,36 @@ export async function initializeDbAsync(): Promise<void> {
   try {
     db.exec(`UPDATE investment_mf SET scheme_code = isin_code WHERE scheme_code IS NULL AND isin_code GLOB '[0-9]*'`);
   } catch { /* ignore */ }
+
+  // Migration: add start_date column to goals
+  try { db.exec('ALTER TABLE goals ADD COLUMN start_date TEXT'); } catch (_) {}
+
+  // Migration: add 'expense' investment type
+  try {
+    db.exec(`INSERT INTO investments (user_id,investment_type,name,is_active,created_at,updated_at) VALUES (0,'expense','__test__expense__',0,'1970-01-01','1970-01-01')`);
+    db.exec(`DELETE FROM investments WHERE name='__test__expense__'`);
+  } catch {
+    try {
+      db.exec(`ALTER TABLE investments RENAME TO investments_old`);
+      db.exec(`CREATE TABLE investments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        investment_type TEXT NOT NULL CHECK(investment_type IN ('fd','rd','mf_equity','mf_hybrid','mf_debt','shares','gold','loan','fixed_asset','pension','savings_account','expense')),
+        name TEXT NOT NULL, institution TEXT, notes TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO investments SELECT * FROM investments_old`);
+      db.exec(`DROP TABLE investments_old`);
+    } catch (e) { console.error('investments CHECK migration failed:', e); }
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS investment_expense (
+    investment_id INTEGER PRIMARY KEY REFERENCES investments(id) ON DELETE CASCADE,
+    start_date TEXT NOT NULL,
+    expense_date TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL
+  )`);
 
   saveToDisk();
 }

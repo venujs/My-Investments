@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS investments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  investment_type TEXT NOT NULL CHECK(investment_type IN ('fd', 'rd', 'mf_equity', 'mf_hybrid', 'mf_debt', 'shares', 'gold', 'loan', 'fixed_asset', 'pension', 'savings_account')),
+  investment_type TEXT NOT NULL CHECK(investment_type IN ('fd', 'rd', 'mf_equity', 'mf_hybrid', 'mf_debt', 'shares', 'gold', 'loan', 'fixed_asset', 'pension', 'savings_account', 'expense')),
   name TEXT NOT NULL,
   institution TEXT,
   notes TEXT,
@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS investment_savings_account (
   account_number TEXT,
   interest_rate REAL NOT NULL DEFAULT 0,
   ifsc TEXT
+);
+
+CREATE TABLE IF NOT EXISTS investment_expense (
+  investment_id INTEGER PRIMARY KEY REFERENCES investments(id) ON DELETE CASCADE,
+  start_date TEXT NOT NULL,
+  expense_date TEXT NOT NULL,
+  amount_paise INTEGER NOT NULL
 );
 
 -- Investment transactions

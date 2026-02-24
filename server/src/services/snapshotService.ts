@@ -46,7 +46,7 @@ export function calculateNetWorthSnapshot(userId: number, yearMonth?: string): v
     const invested = enriched.invested_amount_paise || 0;
     const currentValue = enriched.current_value_paise || 0;
 
-    if (inv.investment_type === 'loan') {
+    if (inv.investment_type === 'loan' || inv.investment_type === 'expense') {
       totalDebt += currentValue;
     } else {
       totalInvested += invested;
@@ -99,7 +99,7 @@ export function getDashboardStats(userId?: number): DashboardStats {
 
   for (const inv of investments) {
     const enriched = valuationService.enrichInvestment(inv);
-    if (inv.investment_type === 'loan') {
+    if (inv.investment_type === 'loan' || inv.investment_type === 'expense') {
       totalDebt += enriched.current_value_paise || 0;
     } else {
       totalInvested += enriched.invested_amount_paise || 0;
@@ -202,6 +202,11 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
         break;
       case 'loan':
         invested = detail.principal_paise || 0;
+        break;
+      case 'expense':
+        if (detail.start_date && detail.expense_date && detail.start_date <= targetDate) {
+          invested = detail.amount_paise || 0;
+        }
         break;
     }
   }
@@ -308,6 +313,14 @@ async function calculateHistoricalValue(investment: Investment, targetDate: stri
     case 'savings_account':
       value = transactionService.getTotalInvestedAsOf(investment.id, targetDate);
       break;
+    case 'expense': {
+      if (detail.start_date && detail.expense_date &&
+          detail.start_date <= targetDate && targetDate <= detail.expense_date) {
+        invested = detail.amount_paise || 0;
+        value = detail.amount_paise || 0;
+      }
+      break;
+    }
     default:
       value = invested;
   }
@@ -436,11 +449,26 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
         case 'fixed_asset':
           startDate = detail?.purchase_date || createdDate;
           break;
+        case 'expense':
+          startDate = detail?.start_date || createdDate;
+          break;
         default:
           // mf_equity, mf_hybrid, mf_debt, shares, pension, savings_account:
           // use first transaction date; fall back to created_at if no transactions yet
           startDate = firstTxnDateMap.get(inv.id) || createdDate;
       }
+
+      // Exclude FD/RD that had fully matured/closed before the start of this target month
+      if ((inv.investment_type === 'fd' || inv.investment_type === 'rd') && detail?.maturity_date) {
+        if (detail.maturity_date < targetDate) return false;
+      }
+
+      // Expense: only active between start_date and expense_date
+      if (inv.investment_type === 'expense' && detail) {
+        if (!detail.start_date || targetDate < detail.start_date) return false;
+        if (detail.expense_date && detail.expense_date < targetDate) return false;
+      }
+
       return startDate <= targetDate;
     });
 
@@ -482,7 +510,7 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
     let totalValue = 0;
     let totalDebt = 0;
     for (const [type, bkd] of Object.entries(breakdown)) {
-      if (type === 'loan') {
+      if (type === 'loan' || type === 'expense') {
         totalDebt += bkd.value || 0;
       } else {
         totalInvested += bkd.invested || 0;
@@ -493,7 +521,7 @@ export async function generateHistoricalSnapshots(userId: number): Promise<numbe
     // Compute gain, gain_percent, and XIRR per investment type
     for (const type of Object.keys(breakdown)) {
       const bkd = breakdown[type];
-      if (type === 'loan') {
+      if (type === 'loan' || type === 'expense') {
         bkd.gain = 0;
         bkd.gain_percent = 0;
         bkd.xirr = null;

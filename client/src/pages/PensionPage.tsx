@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment, useClearInvestmentsByType } from '@/hooks/useInvestments';
+import { useInvestmentsByType, useCreateInvestment, useDeleteInvestment, useClearInvestmentsByType, useSetBalance } from '@/hooks/useInvestments';
 import { useInvestmentTransactions, useCreateTransaction, useDeleteTransaction } from '@/hooks/useTransactions';
 import { InrAmount } from '@/components/shared/InrAmount';
 import { AmountInput } from '@/components/shared/AmountInput';
@@ -15,8 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InvestmentSummaryCard } from '@/components/shared/InvestmentSummaryCard';
 import { useTypeXIRR } from '@/hooks/useAnalytics';
-import { PiggyBank, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search, CheckSquare } from 'lucide-react';
-import { toPaise } from '@/lib/inr';
+import { PiggyBank, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search, CheckSquare, Wallet } from 'lucide-react';
+import { toPaise, formatINR } from '@/lib/inr';
 import { toast } from 'sonner';
 import type { Investment } from 'shared';
 
@@ -171,11 +171,15 @@ function PensionCard({ investment, expanded, onToggle, onDelete, typeLabels }: {
   const { data: txns = [] } = useInvestmentTransactions(expanded ? investment.id : 0);
   const createTxn = useCreateTransaction();
   const deleteTxn = useDeleteTransaction();
+  const setBalance = useSetBalance('pension');
   const [editTxn, setEditTxn] = useState<any>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [txnType, setTxnType] = useState('deposit');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showBalanceDialog, setShowBalanceDialog] = useState(false);
+  const [newBalance, setNewBalance] = useState('');
+  const [balanceDate, setBalanceDate] = useState(new Date().toISOString().split('T')[0]);
 
   return (
     <Card>
@@ -204,7 +208,10 @@ function PensionCard({ investment, expanded, onToggle, onDelete, typeLabels }: {
             <div><span className="text-muted-foreground">Rate:</span> {d.interest_rate || 0}%</div>
             <div><span className="text-muted-foreground">Invested:</span> <InrAmount paise={investment.invested_amount_paise || 0} /></div>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setNewBalance(''); setBalanceDate(new Date().toISOString().split('T')[0]); setShowBalanceDialog(true); }}>
+              <Wallet className="mr-2 h-4 w-4" /> Set Balance
+            </Button>
             <Button variant="ghost" size="sm" className="text-destructive" onClick={onDelete}><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
           </div>
           <div className="mt-4">
@@ -240,6 +247,40 @@ function PensionCard({ investment, expanded, onToggle, onDelete, typeLabels }: {
             )}
             <EditTransactionDialog transaction={editTxn} open={editTxn !== null} onOpenChange={(open) => { if (!open) setEditTxn(null); }} />
           </div>
+          <Dialog open={showBalanceDialog} onOpenChange={setShowBalanceDialog}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader><DialogTitle>Set Balance</DialogTitle></DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-1 text-sm">
+                  <span className="text-muted-foreground">Current balance</span>
+                  <span className="font-semibold"><InrAmount paise={investment.current_value_paise || 0} /></span>
+                </div>
+                <div className="grid gap-2"><Label>New Balance *</Label><AmountInput value={newBalance} onChange={setNewBalance} /></div>
+                <div className="grid gap-2"><Label>Date</Label><Input type="date" value={balanceDate} onChange={e => setBalanceDate(e.target.value)} /></div>
+                {newBalance && !isNaN(parseFloat(newBalance)) && (() => {
+                  const newPaise = toPaise(parseFloat(newBalance));
+                  const delta = newPaise - (investment.current_value_paise || 0);
+                  if (Math.abs(delta) < 1) return null;
+                  return (
+                    <p className="text-sm text-muted-foreground">
+                      Will create a <strong>{delta > 0 ? 'deposit' : 'withdrawal'}</strong> of{' '}
+                      <strong>{formatINR(Math.abs(delta))}</strong>
+                    </p>
+                  );
+                })()}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowBalanceDialog(false)}>Cancel</Button>
+                <Button disabled={!newBalance || isNaN(parseFloat(newBalance)) || setBalance.isPending} onClick={() => {
+                  const bp = toPaise(parseFloat(newBalance));
+                  setBalance.mutate({ id: investment.id, data: { balance_paise: bp, date: balanceDate } }, {
+                    onSuccess: () => { toast.success('Balance updated'); setShowBalanceDialog(false); },
+                    onError: () => toast.error('Failed to update balance'),
+                  });
+                }}>{setBalance.isPending ? 'Saving...' : 'Confirm'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       )}
     </Card>

@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Landmark, RotateCcw, TrendingUp, BarChart3,
   Coins, Home, PiggyBank, Target, Calculator,
-  Upload, Download, Settings, Repeat, CircleDollarSign, Camera,
+  Upload, Download, Settings, Repeat, CircleDollarSign, Camera, Receipt, HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/shares', icon: BarChart3, label: 'Shares' },
   { to: '/gold', icon: Coins, label: 'Gold' },
   { to: '/loans', icon: CircleDollarSign, label: 'Loans' },
+  { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/fixed-assets', icon: Home, label: 'Fixed Assets' },
   { to: '/pension', icon: PiggyBank, label: 'Pension' },
   { to: '/savings', icon: Landmark, label: 'Savings Accounts' },
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/import', icon: Upload, label: 'Import' },
   { to: '/export', icon: Download, label: 'Export' },
   { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/help', icon: HelpCircle, label: 'Help' },
 ];
 
 export function Sidebar({ className }: { className?: string }) {

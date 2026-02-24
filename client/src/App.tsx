@@ -22,6 +22,8 @@ import { ImportPage } from '@/pages/ImportPage';
 import { ExportPage } from '@/pages/ExportPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SnapshotsPage } from '@/pages/SnapshotsPage';
+import { ExpensePage } from '@/pages/ExpensePage';
+import { HelpPage } from '@/pages/HelpPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,6 +81,7 @@ function AppRoutes() {
         <Route path="shares" element={<SharesPage />} />
         <Route path="gold" element={<GoldPage />} />
         <Route path="loans" element={<LoansPage />} />
+        <Route path="expenses" element={<ExpensePage />} />
         <Route path="fixed-assets" element={<FixedAssetsPage />} />
         <Route path="pension" element={<PensionPage />} />
         <Route path="savings" element={<SavingsAccountsPage />} />
@@ -89,6 +92,7 @@ function AppRoutes() {
         <Route path="export" element={<ExportPage />} />
         <Route path="snapshots" element={<SnapshotsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="help" element={<HelpPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
